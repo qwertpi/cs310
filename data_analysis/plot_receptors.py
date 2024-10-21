@@ -14,6 +14,8 @@ tss_pr_pos: dict[str, int] = Counter()
 tss_pr_neg: dict[str, int] = Counter()
 tss_er_pos: dict[str, int] = Counter()
 tss_er_neg: dict[str, int] = Counter()
+no_graph = 0
+num_cases = 0
 for file_meta in metadata:
     # All the associated entities are length 1 for these files
     case_id = file_meta["associated_entities"][0]["case_id"]
@@ -24,6 +26,13 @@ for file_meta in metadata:
             .getroot()
             .find("{http://tcga.nci/bcr/xml/clinical/brca/2.7}patient")
         )
+
+    barcode = patient_data.find(
+        "{http://tcga.nci/bcr/xml/shared/2.7}bcr_patient_barcode"
+    ).text
+    if not os.path.isfile(f"graphs/{barcode}_ShuffleNet.pkl"):
+        no_graph += 1
+        continue
 
     pr = patient_data.find(
         "{http://tcga.nci/bcr/xml/clinical/brca/shared/2.7}breast_carcinoma_progesterone_receptor_status"
@@ -49,14 +58,29 @@ for file_meta in metadata:
     elif pr.text == "Positive":
         tss_pr_pos[tss] += 1
     else:
-        print(f"Could not parse pr: {pr.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse pr: {pr.text} in {file_meta["file_name"]}")
 
     if er.text == "Negative":
         tss_er_neg[tss] += 1
     elif er.text == "Positive":
         tss_er_pos[tss] += 1
     else:
-        print(f"Could not parse er: {er.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse er: {er.text} in {file_meta["file_name"]}")
+
+    num_cases += 1
+
+print("No graph: ", no_graph)
+print("Valid: ", num_cases)
+print(
+    "PR+:",
+    sum(tss_pr_pos.values()),
+    "PR-:",
+    sum(tss_pr_neg.values()),
+    "ER+:",
+    sum(tss_er_pos.values()),
+    "ER-:",
+    sum(tss_er_neg.values()),
+)
 
 fig, ax = plt.subplots()
 all_centres = list(
