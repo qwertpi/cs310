@@ -1,0 +1,3 @@
+scikit-learn
+torch_geometric
+numpy<2
