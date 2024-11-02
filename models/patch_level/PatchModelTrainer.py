@@ -1,7 +1,7 @@
 from __future__ import annotations
-
 from functools import partial
 import pickle
+from time import time
 from typing import TYPE_CHECKING, Callable, ParamSpec
 
 if TYPE_CHECKING:
@@ -53,21 +53,22 @@ class PatchModelTrainer:
         label_idx: int,
     ):
         LABEL_METRICS: list[tuple[str, Callable[[list[int], list[int]], float]]] = [
-            ("Sensitivity: ", recall_score),
-            ("Specificity: ", partial(recall_score, pos_label=0)),
-            ("Balanced accuracy: ", balanced_accuracy_score),
+            ("Sensitivity", recall_score),
+            ("Specificity", partial(recall_score, pos_label=0)),
+            ("Balanced accuracy", balanced_accuracy_score),
         ]
         PROBABILITY_METRICS: list[
             tuple[str, Callable[[list[int], list[int]], float]]
         ] = [
-            ("AUC_ROC: ", float_wrapper(roc_auc_score)),
-            ("AUC_PR: ", float_wrapper(average_precision_score)),
+            ("AUC_ROC", float_wrapper(roc_auc_score)),
+            ("AUC_PR", float_wrapper(average_precision_score)),
         ]
         ALL_METRICS = LABEL_METRICS + PROBABILITY_METRICS
 
         NUM_FOLDS = 5
 
         scores = np.empty((NUM_FOLDS, len(ALL_METRICS)))
+        train_times = np.empty((NUM_FOLDS))
         folds = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True).split(
             self.graphs, self.y_compact, self.groups
         )
@@ -75,6 +76,7 @@ class PatchModelTrainer:
             with open(f"{model_name}.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
             metric_idx: int = 0
+
             model = make_model()
             train_x = []
             train_y: list[int] = []
@@ -82,7 +84,12 @@ class PatchModelTrainer:
                 for node_features in self.graphs[i].x:
                     train_x.append(node_features)
                     train_y.append(self.graph_level_y[i][label_idx])
+            t0 = time()
             model.fit(train_x, train_y)
+            t1 = time()
+            train_times[fold_num] = t1 - t0
+            with open(f"{model_name}.metrics", "a") as f:
+                f.write(f"Train time: {t1 - t0}\n")
 
             graph_level_y_pred = []
             graph_level_y_true: list[int] = []
@@ -91,7 +98,6 @@ class PatchModelTrainer:
                     aggregator(model.predict_proba(self.graphs[i].x))
                 )
                 graph_level_y_true.append(self.graph_level_y[i][label_idx])
-
             for _, metric_func in LABEL_METRICS:
                 scores[fold_num, metric_idx] = metric_func(
                     graph_level_y_true, graph_level_y_pred
@@ -104,7 +110,6 @@ class PatchModelTrainer:
                 for node_features in self.graphs[i].x:
                     node_level_x.append(node_features)
                     node_level_y_true.append(self.graph_level_y[i][label_idx])
-
             node_level_y_pred = model.predict_proba(node_level_x)[:, 1]
             for _, metric_func in PROBABILITY_METRICS:
                 scores[fold_num, metric_idx] = metric_func(
@@ -122,6 +127,9 @@ class PatchModelTrainer:
             f.write("μ\n")
             for (metric_name, _), average in zip(ALL_METRICS, means):
                 f.write(f"{metric_name}: {average}\n")
+            f.write(f"Train time: {np.mean(train_times)}\n")
+
             f.write("σ\n")
             for (metric_name, _), var in zip(ALL_METRICS, std_devs):
                 f.write(f"{metric_name}: {var}\n")
+            f.write(f"Train time: {np.std(train_times)}\n")

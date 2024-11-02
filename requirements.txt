@@ -1,8 +1,13 @@
 # Comment out the first and not the second for GPU and vice versa
 --extra-index-url https://download.pytorch.org/whl/cpu
 # --extra-index-url https://download.pytorch.org/whl/cu113/torch_stable.html
-scikit-learn==1.5.2
-torch_geometric==2.6.1
-torch==2.1.2
-torchvision==0.16.2
+click==8.1.7
+mypy==1.13.0
 numpy==1.26.4
+ruff==0.7.2
+scikit-learn==1.5.2
+torch==2.1.2
+torch_geometric==2.6.1
+torchvision==0.16.2
+
+
