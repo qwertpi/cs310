@@ -15,9 +15,14 @@ from sklearn.metrics import (  # type: ignore
 )
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.pipeline import Pipeline  # type: ignore
+import torch
 from torch_geometric.data import Data  # type: ignore
 from torch_geometric.typing import Tensor  # type: ignore
 
+if torch.cuda.is_available():
+    import cupy as np
+else:
+    import numpy as np
 
 P = ParamSpec("P")
 
@@ -33,7 +38,6 @@ class PatchModelTrainer:
     def __init__(self):
         with open("../../../data/train_data.pkl", "rb") as f:
             data: list[tuple[str, Data, tuple[bool, bool]]] = pickle.load(f)
-
         self.groups: list[str] = []
         self.x: list[Tensor] = []
         self.graphs: list[Data] = []
@@ -72,20 +76,24 @@ class PatchModelTrainer:
         folds = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True).split(
             self.graphs, self.y_compact, self.groups
         )
+        # Delete the file if it already exists
+        with open(f"{model_name}.metrics", "w") as f:
+            f.write("")
         for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
             with open(f"{model_name}.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
             metric_idx: int = 0
 
-            model = make_model()
-            train_x = []
+            train_x: list[Tensor] = []
             train_y: list[int] = []
             for i in train_idxs:
                 for node_features in self.graphs[i].x:
                     train_x.append(node_features)
                     train_y.append(self.graph_level_y[i][label_idx])
+
             t0 = time()
-            model.fit(train_x, train_y)
+            model = make_model()
+            model.fit(np.array(train_x), np.array(train_y))
             t1 = time()
             train_times[fold_num] = t1 - t0
             with open(f"{model_name}.metrics", "a") as f:
@@ -95,7 +103,7 @@ class PatchModelTrainer:
             graph_level_y_true: list[int] = []
             for i in validation_idxs:
                 graph_level_y_pred.append(
-                    aggregator(model.predict_proba(self.graphs[i].x))
+                    aggregator(model.predict_proba(np.array(self.graphs[i].x)))
                 )
                 graph_level_y_true.append(self.graph_level_y[i][label_idx])
             for _, metric_func in LABEL_METRICS:
@@ -110,7 +118,7 @@ class PatchModelTrainer:
                 for node_features in self.graphs[i].x:
                     node_level_x.append(node_features)
                     node_level_y_true.append(self.graph_level_y[i][label_idx])
-            node_level_y_pred = model.predict_proba(node_level_x)[:, 1]
+            node_level_y_pred = model.predict_proba(np.array(node_level_x))[:, 1]
             for _, metric_func in PROBABILITY_METRICS:
                 scores[fold_num, metric_idx] = metric_func(
                     node_level_y_true, node_level_y_pred
@@ -124,12 +132,12 @@ class PatchModelTrainer:
         means = np.mean(scores, axis=0)
         std_devs = np.std(scores, axis=0)
         with open(f"{model_name}.metrics", "a") as f:
-            f.write("μ\n")
+            f.write("MEAN\n")
             for (metric_name, _), average in zip(ALL_METRICS, means):
                 f.write(f"{metric_name}: {average}\n")
             f.write(f"Train time: {np.mean(train_times)}\n")
 
-            f.write("σ\n")
+            f.write("STD_DEV\n")
             for (metric_name, _), var in zip(ALL_METRICS, std_devs):
                 f.write(f"{metric_name}: {var}\n")
             f.write(f"Train time: {np.std(train_times)}\n")

@@ -1,7 +1,9 @@
 # Comment out the first and not the second for GPU and vice versa
---extra-index-url https://download.pytorch.org/whl/cpu
-# --extra-index-url https://download.pytorch.org/whl/cu113/torch_stable.html
+# --extra-index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cu113/torch_stable.html
+# Note torch will not change version on its own if CPU/GPU is installed but the other is now wanted, it must be uninstalled first or --reinstall used
 click==8.1.7
+cupy-cuda12x==13.3.0
 matplotlib==3.9.2
 mypy==1.13.0
 numpy==1.26.4
@@ -11,5 +13,4 @@ scikit-learn==1.5.2
 torch==2.1.2
 torch_geometric==2.6.1
 torchvision==0.16.2
-
-
+xgboost==2.1.2
