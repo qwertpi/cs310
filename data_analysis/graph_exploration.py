@@ -6,7 +6,6 @@ import numpy as np
 from networkx import connected_components, diameter  # type: ignore
 from sklearn.decomposition import PCA  # type: ignore
 from sklearn.pipeline import make_pipeline  # type: ignore
-from sklearn.preprocessing import StandardScaler  # type: ignore
 from torch import Tensor
 import torch_geometric.data  # type: ignore
 import torch_geometric.utils  # type: ignore
@@ -43,7 +42,7 @@ for dataset, dataset_name in ((test_set, "test"), (train_set, "train")):
     plt.hist(diameter_list)
     plt.savefig(f"{dataset_name}_diameters.png")
 
-    data = make_pipeline(StandardScaler(), PCA(n_components=8)).fit_transform(data_list)
+    data = make_pipeline(PCA(n_components=8)).fit_transform(data_list)
     for i, feats in enumerate(data.T):
         plt.clf()
         plt.hist(feats)

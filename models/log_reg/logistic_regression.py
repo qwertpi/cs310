@@ -2,7 +2,6 @@ import click
 import numpy as np
 from sklearn.linear_model import LogisticRegression  # type: ignore
 from sklearn.pipeline import make_pipeline  # type: ignore
-from sklearn.preprocessing import StandardScaler  # type: ignore
 
 from PatchModelTrainer import PatchModelTrainer
 
@@ -27,7 +26,6 @@ VOTE_AGGREGATOR = lambda p: round(np.mean(np.argmax(p, axis=1)))  # noqa: E731
 def train_model(receptor: str, aggregator: str, l1ratio: float, c: float):
     PatchModelTrainer().train_and_validate(
         lambda: make_pipeline(
-            StandardScaler(),
             LogisticRegression(
                 penalty="elasticnet",
                 C=c,

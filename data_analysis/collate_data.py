@@ -4,6 +4,8 @@ import pickle
 
 from lxml import etree  # type: ignore
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
+from sklearn.preprocessing import StandardScaler  # type: ignore
+import torch
 from torch_geometric.data import Data  # type: ignore
 from tqdm import tqdm
 
@@ -60,14 +62,14 @@ for file_meta in tqdm(metadata):
     elif pr.text == "Positive":
         pr_pos = True
     else:
-        raise RuntimeError(f"Could not parse pr: {pr.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse pr: {pr.text} in {file_meta['file_name']}")
 
     if er.text == "Negative":
         er_pos = False
     elif er.text == "Positive":
         er_pos = True
     else:
-        raise RuntimeError(f"Could not parse er: {er.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse er: {er.text} in {file_meta['file_name']}")
     data.append((tissue_source, barcode, graph, (er_pos, pr_pos)))
 
 if len(set(t[1] for t in data)) != len(data):
@@ -84,6 +86,16 @@ train_idxs, test_idxs = next(splitter.split(x, y_compact, groups))
 
 train_set = [data[i][1:] for i in train_idxs]
 test_set = [data[i][1:] for i in test_idxs]
+
+scaler = StandardScaler()
+scaler.fit(torch.cat([t[1].x for t in train_set]))
+
+for _, graph, (_, _) in train_set:
+    graph.x = torch.tensor(scaler.transform(graph.x), dtype=torch.float32)
+
+for _, graph, (_, _) in test_set:
+    graph.x = torch.tensor(scaler.transform(graph.x), dtype=torch.float32)
+
 print(len(data))
 print(len(train_set))
 print(len(test_set))

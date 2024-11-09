@@ -9,7 +9,6 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.decomposition import PCA  # type: ignore
-from sklearn.preprocessing import StandardScaler  # type: ignore
 from skimage.exposure import equalize_hist
 from tiatoolbox.wsicore.wsireader import WSIReader  # type: ignore
 from tiatoolbox.utils.visualization import plot_graph  # type: ignore
@@ -20,7 +19,7 @@ for wsi_name in os.listdir("../../data/wsis/"):
         g = pickle.load(f)
 
     # Project features down into 3D to be used as R G B colour channels
-    pca = PCA(n_components=3).fit_transform(StandardScaler().fit_transform(g.x))
+    pca = PCA(n_components=3).fit_transform(g.x))
     colours = np.empty(pca.shape)
     for channel in range(3):
         colours[:, channel] = (1 - equalize_hist(pca[:, channel]) ** 2) * 255
