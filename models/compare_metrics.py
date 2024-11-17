@@ -2,11 +2,15 @@ import glob
 
 import click
 
+
 @click.command()
 @click.argument("pattern")
 def main(pattern: str):
     paths = glob.glob(pattern)
-    for receptor_paths in ((path for path in paths if "ER_" in path), (path for path in paths if "PR_" in path)):
+    for receptor_paths in (
+        (path for path in paths if "ER_" in path),
+        (path for path in paths if "PR_" in path),
+    ):
         best_per_metric: dict[str, tuple[float, str]] = {}
         worst_per_metric: dict[str, tuple[float, str]] = {}
         for path in receptor_paths:
@@ -27,13 +31,20 @@ def main(pattern: str):
                     if metric_name == "Train time":
                         metric_val *= -1
 
-                    if best_per_metric.get(metric_name, (float("-inf"),))[0] < metric_val:
+                    if (
+                        best_per_metric.get(metric_name, (float("-inf"),))[0]
+                        < metric_val
+                    ):
                         best_per_metric[metric_name] = (metric_val, path)
-                    if worst_per_metric.get(metric_name, (float("+inf"),))[0] > metric_val:
+                    if (
+                        worst_per_metric.get(metric_name, (float("+inf"),))[0]
+                        > metric_val
+                    ):
                         worst_per_metric[metric_name] = (metric_val, path)
 
         print(best_per_metric)
         print(worst_per_metric)
+
 
 if __name__ == "__main__":
     main()

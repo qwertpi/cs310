@@ -20,7 +20,7 @@ from torch_geometric.data import Data  # type: ignore
 from torch_geometric.typing import Tensor  # type: ignore
 
 if torch.cuda.is_available():
-    import cupy as np
+    import cupy as np  # type: ignore
 else:
     import numpy as np
 
@@ -62,7 +62,7 @@ class PatchModelTrainer:
             ("Balanced accuracy", balanced_accuracy_score),
         ]
         PROBABILITY_METRICS: list[
-            tuple[str, Callable[[list[int], list[int]], float]]
+            tuple[str, Callable[[list[int], list[float]], float]]
         ] = [
             ("AUC_ROC", float_wrapper(roc_auc_score)),
             ("AUC_PR", float_wrapper(average_precision_score)),
@@ -119,7 +119,7 @@ class PatchModelTrainer:
                     node_level_x.append(node_features)
                     node_level_y_true.append(self.graph_level_y[i][label_idx])
             node_level_y_pred = model.predict_proba(np.array(node_level_x))[:, 1]
-            for _, metric_func in PROBABILITY_METRICS:
+            for _, metric_func in PROBABILITY_METRICS:  # type: ignore
                 scores[fold_num, metric_idx] = metric_func(
                     node_level_y_true, node_level_y_pred
                 )
