@@ -4,9 +4,11 @@
 # Note torch will not change version on its own if CPU/GPU is installed but the other is now wanted, it must be uninstalled first or --reinstall used
 click==8.1.7
 cupy-cuda12x==13.3.0
+lightning==2.4.0
 matplotlib==3.9.2
 mypy==1.13.0
 numpy==1.26.4
+pandas==2.2.3
 PyQt5==5.15.11
 ruff==0.7.2
 scikit-learn==1.5.2

@@ -4,26 +4,29 @@ import pickle
 from time import time
 from typing import TYPE_CHECKING, Callable, ParamSpec
 
+from pytorch_lightning.loggers import CSVLogger
+
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+from pytorch_lightning import LightningModule, Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
+from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.metrics import (  # type: ignore
     average_precision_score,
     balanced_accuracy_score,
     recall_score,
     roc_auc_score,
 )
-from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 import torch
+
 from torch_geometric.data import Data  # type: ignore
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
 
-if torch.cuda.is_available():
-    import cupy as np  # type: ignore
-else:
-    import numpy as np
+torch.set_float32_matmul_precision("medium")
 
 P = ParamSpec("P")
 
@@ -44,7 +47,73 @@ class Dataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         _, graph, labels = self.data[idx]
-        return graph, torch.tensor(labels, dtype=torch.float)
+        graph.y = torch.tensor(labels, dtype=torch.float).unsqueeze(0)
+        return graph
+
+
+class LightningModel(LightningModule):
+    def __init__(self, torch_model: torch.nn.Module):
+        super().__init__()
+        self.model = torch_model
+
+    def forward(self, *args, **kwargs):
+        return self.model(*args, **kwargs)
+
+    def compute_losses(self, batch):
+        out = self.model(batch.x, batch.edge_index, batch.batch)
+        er_labels = batch.y[:, 0]
+        batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            out[:, 0],
+            er_labels,
+            pos_weight=torch.div(torch.sum(er_labels == 1), torch.sum(er_labels == 0)),
+        )
+        pr_labels = batch.y[:, 1]
+        batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+            out[:, 1],
+            pr_labels,
+            pos_weight=torch.div(torch.sum(pr_labels == 1), torch.sum(pr_labels == 0)),
+        )
+        loss = batch_er_loss + batch_pr_loss
+        return batch_er_loss, batch_pr_loss, loss
+
+    def training_step(self, batch):
+        batch_er_loss, batch_pr_loss, loss = self.compute_losses(batch)
+        self.log(
+            "train_er_loss",
+            batch_er_loss,
+            batch_size=len(batch),
+            on_epoch=True,
+            on_step=False,
+        )
+        self.log(
+            "train_pr_loss",
+            batch_pr_loss,
+            batch_size=len(batch),
+            on_epoch=True,
+            on_step=False,
+        )
+        return loss
+
+    def validation_step(self, batch):
+        batch_er_loss, batch_pr_loss, loss = self.compute_losses(batch)
+        self.log(
+            "val_er_loss",
+            batch_er_loss,
+            batch_size=len(batch),
+            on_epoch=True,
+            on_step=False,
+        )
+        self.log(
+            "val_pr_loss",
+            batch_pr_loss,
+            batch_size=len(batch),
+            on_epoch=True,
+            on_step=False,
+        )
+        self.log("val_loss", loss, batch_size=len(batch), on_epoch=True, on_step=False)
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters())
 
 
 class GNNModelTrainer:
@@ -61,7 +130,6 @@ class GNNModelTrainer:
             self.y.append(graph_label)
             self.dummy.append(None)
             self.groups.append(group)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     def train_and_validate(
         self,
@@ -102,6 +170,18 @@ class GNNModelTrainer:
             with open(f"{model_name}_PR.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
 
+            model = LightningModel(make_model())
+            checkpoint = ModelCheckpoint(
+                monitor="val_loss", mode="min", dirpath="checkpoints", filename="best"
+            )
+            logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
+            trainer = Trainer(
+                accelerator="gpu",
+                max_epochs=epochs,
+                callbacks=[checkpoint],
+                logger=logger,
+                enable_progress_bar=False,
+            )
             train_loader = torch_geometric.loader.DataLoader(
                 torch.utils.data.Subset(self.dataset, train_idxs),
                 batch_size=batch_size,
@@ -110,81 +190,77 @@ class GNNModelTrainer:
             validation_loader = torch_geometric.loader.DataLoader(
                 torch.utils.data.Subset(self.dataset, validation_idxs),
                 batch_size=batch_size,
-                shuffle=True,
             )
 
             t0 = time()
-            model = make_model().to(self.device)
-            optimizer = torch.optim.Adam(model.parameters())
-            fig, ax = plt.subplots()
-            er_losses = []
-            pr_losses = []
-            for epoch in range(epochs):
-                er_loss = pr_loss = 0.0
-                model.train()
-                for batch_data, batch_y in train_loader:
-                    batch_data, batch_y = batch_data.to(self.device), batch_y.to(self.device)
-                    optimizer.zero_grad()
-                    out = model(batch_data.x, batch_data.edge_index, batch_data.batch)
-                    batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        out[:, 0], batch_y[:, 0]
-                    )
-                    batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        out[:, 1], batch_y[:, 1]
-                    )
-                    loss = batch_er_loss + batch_pr_loss
-                    loss.backward()
-                    optimizer.step()
-                model.eval()
-                for batch_data, batch_y in validation_loader:
-                    batch_data, batch_y = batch_data.to(self.device), batch_y.to(self.device)
-                    out = model(batch_data.x, batch_data.edge_index, batch_data.batch)
-                    batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        out[:, 0], batch_y[:, 0]
-                    )
-                    batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                        out[:, 1], batch_y[:, 1]
-                    )
-                    er_loss += batch_er_loss.item()
-                    pr_loss += batch_pr_loss.item()
-                er_losses.append(er_loss)
-                pr_losses.append(pr_loss)
+            trainer.fit(model, train_loader, validation_loader)
             t1 = time()
+
             train_times[fold_num] = t1 - t0
-            ax.plot(range(1, epochs + 1), er_losses)
-            fig.savefig(f"{model_name}_loss_ER_{fold_num}.png")
-            ax.clear()
-            ax.plot(range(1, epochs + 1), pr_losses)
-            fig.savefig(f"{model_name}_loss_PR_{fold_num}.png")
             with open(f"{model_name}_ER.metrics", "a") as f:
                 f.write(f"Train time: {t1 - t0}\n")
             with open(f"{model_name}_PR.metrics", "a") as f:
                 f.write(f"Train time: {t1 - t0}\n")
 
-            y_pred = []
-            y_true = []
+            ckpt = torch.load(checkpoint.best_model_path)
+            logs = pd.read_csv(f"logs/{model_name}/version_{fold_num}/metrics.csv")
+            epochs_list = range(1, epochs + 1)
+            fig, ax = plt.subplots()
+            ax.plot(epochs_list, logs["train_er_loss"].dropna(), label="train")
+            ax.plot(epochs_list, logs["val_er_loss"].dropna(), label="validation")
+            ax.plot(
+                ckpt["epoch"] + 1,
+                [
+                    log["val_er_loss"]
+                    for log in logs.to_dict("records")
+                    if log["epoch"] == ckpt["epoch"] and not pd.isna(log["val_er_loss"])
+                ],
+                marker="o",
+            )
+            fig.legend()
+            fig.tight_layout()
+            fig.savefig(f"{model_name}_loss_ER_{fold_num}.png")
+            ax.clear()
+            ax.plot(epochs_list, logs["train_pr_loss"].dropna(), label="train")
+            ax.plot(epochs_list, logs["val_pr_loss"].dropna(), label="validation")
+            ax.plot(
+                ckpt["epoch"] + 1,
+                [
+                    log["val_pr_loss"]
+                    for log in logs.to_dict("records")
+                    if log["epoch"] == ckpt["epoch"] and not pd.isna(log["val_pr_loss"])
+                ],
+                marker="o",
+            )
+            fig.legend()
+            fig.tight_layout()
+            fig.savefig(f"{model_name}_loss_PR_{fold_num}.png")
+
+            model.load_state_dict(ckpt["state_dict"])
+            model.eval()
+            y_pred: list[torch.Tensor] = []
+            y_true: list[torch.Tensor] = []
             with torch.no_grad():
-                for batch_data, batch_y in validation_loader:
-                    batch_data, batch_y = batch_data.to(self.device), batch_y.to(self.device)
+                for batch_data in validation_loader:
                     y_pred.extend(
-                        model(batch_data.x, batch_data.edge_index, batch_data.batch)
+                        torch.nn.functional.sigmoid(
+                            model(batch_data.x, batch_data.edge_index, batch_data.batch)
+                        )
                     )
-                    y_true.extend(batch_y)
-            print(y_pred)
-            print(y_true)
+                    y_true.extend(batch_data.y)
             for label_idx, label in enumerate(("ER", "PR")):
                 metric_idx = 0
-                y_pred_label = [max(0, min(1, round(t[label_idx].item()))) for t in y_pred]
-                y_true_label = [max(0, min(1, round(t[label_idx].item()))) for t in y_true]
-                for _, metric_func in LABEL_METRICS:
-                    scores[label_idx, fold_num, metric_idx] = metric_func(
+                y_pred_label = [round(t[label_idx].item()) for t in y_pred]
+                y_true_label = [round(t[label_idx].item()) for t in y_true]
+                for _, l_metric_func in LABEL_METRICS:
+                    scores[label_idx, fold_num, metric_idx] = l_metric_func(
                         y_true_label, y_pred_label
                     )
                     metric_idx += 1
-                y_pred_prob = [t[label_idx].item() for t in y_pred]
-                y_true_prob = [t[label_idx].item() for t in y_true]
-                for _, metric_func in PROBABILITY_METRICS:  # type: ignore
-                    scores[label_idx, fold_num, metric_idx] = metric_func(
+                y_pred_prob = [float(t[label_idx].item()) for t in y_pred]
+                y_true_prob = [int(t[label_idx].item()) for t in y_true]
+                for _, p_metric_func in PROBABILITY_METRICS:
+                    scores[label_idx, fold_num, metric_idx] = p_metric_func(
                         y_true_prob, y_pred_prob
                     )
                     metric_idx += 1
