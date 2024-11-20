@@ -1,6 +1,7 @@
 import glob
 
 import click
+from numpy import format_float_positional
 
 
 @click.command()
@@ -42,8 +43,28 @@ def main(pattern: str):
                     ):
                         worst_per_metric[metric_name] = (metric_val, path)
 
-        print(best_per_metric)
-        print(worst_per_metric)
+        print(
+            {
+                k: (
+                    format_float_positional(
+                        v1, precision=3, unique=False, fractional=False
+                    ),
+                    v2,
+                )
+                for k, (v1, v2) in best_per_metric.items()
+            }
+        )
+        print(
+            {
+                k: (
+                    format_float_positional(
+                        v1, precision=3, unique=False, fractional=False
+                    ),
+                    v2,
+                )
+                for k, (v1, v2) in worst_per_metric.items()
+            }
+        )
 
 
 if __name__ == "__main__":

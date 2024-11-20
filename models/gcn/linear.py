@@ -23,4 +23,4 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
     # I.e. all the data in one batch
-    trainer.train_and_validate(Model, "linear", 1024, 500)
+    trainer.train_and_validate(Model, "linear", 1024, 200)

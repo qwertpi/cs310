@@ -1,6 +1,7 @@
 import json
 import os
 import pickle
+from typing import Any  # noqa: F401
 
 from lxml import etree  # type: ignore
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
@@ -26,11 +27,11 @@ for file_meta in tqdm(metadata):
             etree.parse(f)
             .getroot()
             .find("{http://tcga.nci/bcr/xml/clinical/brca/2.7}patient")
-        )
+        )  # type: Any
 
     barcode = patient_data.find(
         "{http://tcga.nci/bcr/xml/shared/2.7}bcr_patient_barcode"
-    ).text
+    ).text  # type: Any
 
     try:
         with open(f"graphs/{barcode}_ShuffleNet.pkl", "rb") as f:
@@ -40,10 +41,10 @@ for file_meta in tqdm(metadata):
 
     pr = patient_data.find(
         "{http://tcga.nci/bcr/xml/clinical/brca/shared/2.7}breast_carcinoma_progesterone_receptor_status"
-    )
+    )  # type: Any
     er = patient_data.find(
         "{http://tcga.nci/bcr/xml/clinical/brca/shared/2.7}breast_carcinoma_estrogen_receptor_status"
-    )
+    )  # type: Any
 
     if (
         pr.attrib["procurement_status"] != "Completed"

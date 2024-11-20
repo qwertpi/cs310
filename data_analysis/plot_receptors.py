@@ -1,8 +1,9 @@
 import json
 import os
+from typing import Any  # noqa: F401
 
 from collections import Counter
-from lxml import etree
+from lxml import etree  # type: ignore
 from matplotlib import pyplot as plt
 
 os.chdir("../../data/")
@@ -25,7 +26,7 @@ for file_meta in metadata:
             etree.parse(f)
             .getroot()
             .find("{http://tcga.nci/bcr/xml/clinical/brca/2.7}patient")
-        )
+        )  # type: Any
 
     barcode = patient_data.find(
         "{http://tcga.nci/bcr/xml/shared/2.7}bcr_patient_barcode"
@@ -36,10 +37,10 @@ for file_meta in metadata:
 
     pr = patient_data.find(
         "{http://tcga.nci/bcr/xml/clinical/brca/shared/2.7}breast_carcinoma_progesterone_receptor_status"
-    )
+    )  # type: Any
     er = patient_data.find(
         "{http://tcga.nci/bcr/xml/clinical/brca/shared/2.7}breast_carcinoma_estrogen_receptor_status"
-    )
+    )  # type: Any
 
     if (
         pr.attrib["procurement_status"] != "Completed"
@@ -58,14 +59,14 @@ for file_meta in metadata:
     elif pr.text == "Positive":
         tss_pr_pos[tss] += 1
     else:
-        raise RuntimeError(f"Could not parse pr: {pr.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse pr: {pr.text} in {file_meta['file_name']}")
 
     if er.text == "Negative":
         tss_er_neg[tss] += 1
     elif er.text == "Positive":
         tss_er_pos[tss] += 1
     else:
-        raise RuntimeError(f"Could not parse er: {er.text} in {file_meta["file_name"]}")
+        raise RuntimeError(f"Could not parse er: {er.text} in {file_meta['file_name']}")
 
     num_cases += 1
 
