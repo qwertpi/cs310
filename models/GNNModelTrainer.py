@@ -4,15 +4,15 @@ import pickle
 from time import time
 from typing import TYPE_CHECKING, Callable, ParamSpec
 
-from pytorch_lightning.loggers import CSVLogger
-
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
+
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.loggers import CSVLogger
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.metrics import (  # type: ignore
     average_precision_score,
@@ -121,13 +121,11 @@ class GNNModelTrainer:
             data: list[tuple[str, Data, tuple[bool, bool]]] = pickle.load(f)
         self.dataset = Dataset(data)
         self.groups: list[str] = []
-        self.dummy: list[None] = []
         self.y: list[tuple[bool, bool]] = []
         self.y_compact: list[str] = []
         for group, _, graph_label in data:
             self.y_compact.append(str(int(graph_label[0])) + str(int(graph_label[1])))
             self.y.append(graph_label)
-            self.dummy.append(None)
             self.groups.append(group)
 
         global er_pos_weight, pr_pos_weight
@@ -164,9 +162,10 @@ class GNNModelTrainer:
 
         # [ER scores, PR scores]
         scores = np.empty((2, NUM_FOLDS, len(ALL_METRICS)))
+        num_epochs_used = np.empty((NUM_FOLDS))
         train_times = np.empty((NUM_FOLDS))
         folds = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True).split(
-            self.dummy, self.y_compact, self.groups
+            self.y_compact, self.y_compact, self.groups
         )
         # Delete the file if it already exists
         with open(f"{model_name}_ER.metrics", "w") as f:
@@ -181,13 +180,14 @@ class GNNModelTrainer:
 
             model = LightningModel(make_model())
             checkpoint = ModelCheckpoint(
-                monitor="val_loss", mode="min", dirpath="checkpoints", filename="best"
+                monitor="val_loss", filename="best"
             )
-            logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
+            early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+            logger = CSVLogger(save_dir="logs", name=model_name, version=f"{fold_num}")
             trainer = Trainer(
                 accelerator="gpu",
                 accumulate_grad_batches=1024,  # i.e. all the batches
-                callbacks=[checkpoint],
+                callbacks=[checkpoint, early_stopping],
                 enable_progress_bar=False,
                 logger=logger,
                 max_epochs=epochs,
@@ -213,8 +213,13 @@ class GNNModelTrainer:
                 f.write(f"Train time: {t1 - t0}\n")
 
             ckpt = torch.load(checkpoint.best_model_path)
+            num_epochs_used[fold_num] = ckpt["epoch"]
+            with open(f"{model_name}_ER.metrics", "a") as f:
+                f.write(f"Epochs: {ckpt['epoch']}\n")
+            with open(f"{model_name}_PR.metrics", "a") as f:
+                f.write(f"Epochs: {ckpt['epoch']}\n")
             logs = pd.read_csv(f"logs/{model_name}/version_{fold_num}/metrics.csv")
-            epochs_list = range(1, epochs + 1)
+            epochs_list = range(logs["epoch"].min(), logs["epoch"].max() + 1)
             fig, ax = plt.subplots()
             ax.plot(epochs_list, logs["train_er_loss"].dropna(), label="train")
             ax.plot(epochs_list, logs["val_er_loss"].dropna(), label="validation")
@@ -290,8 +295,10 @@ class GNNModelTrainer:
                 for (metric_name, _), average in zip(ALL_METRICS, means):
                     f.write(f"{metric_name}: {average}\n")
                 f.write(f"Train time: {np.mean(train_times)}\n")
+                f.write(f"Epochs: {np.mean(num_epochs_used)}\n")
 
                 f.write("STD_DEV\n")
                 for (metric_name, _), var in zip(ALL_METRICS, std_devs):
                     f.write(f"{metric_name}: {var}\n")
                 f.write(f"Train time: {np.std(train_times)}\n")
+                f.write(f"Epochs: {np.std(num_epochs_used)}\n")
