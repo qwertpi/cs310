@@ -12,10 +12,10 @@ from GNNModelTrainer import GNNModelTrainer  # type: ignore
 class Model(torch.nn.Module):
     def __init__(self):
         super().__init__()
-        self.conv = torch_geometric.nn.GCNConv(1024, 2)
+        self.lin = torch_geometric.nn.Linear(1024, 2)
 
     def forward(self, x, edge_index, batch):
-        h = self.conv(x, edge_index)
+        h = self.lin(x)
         out = torch_geometric.nn.pool.global_mean_pool(h, batch)
         return out
 
