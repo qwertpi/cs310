@@ -11,7 +11,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from pytorch_lightning import LightningModule, Trainer
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import (
+    EarlyStopping,
+    ModelCheckpoint,
+)
 from pytorch_lightning.loggers import CSVLogger
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.metrics import (  # type: ignore
@@ -52,9 +55,16 @@ class Dataset(torch.utils.data.Dataset):
 
 
 class LightningModel(LightningModule):
-    def __init__(self, torch_model: torch.nn.Module):
+    def __init__(
+        self,
+        torch_model: torch.nn.Module,
+        er_pos_weight: torch.Tensor,
+        pr_pos_weight: torch.Tensor,
+    ):
         super().__init__()
         self.model = torch_model
+        self.er_pos_weight = er_pos_weight
+        self.pr_pos_weight = pr_pos_weight
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -66,11 +76,11 @@ class LightningModel(LightningModule):
         batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
             out[:, 0],
             er_labels,
-            pos_weight=er_pos_weight,
+            pos_weight=self.er_pos_weight,
         )
         pr_labels = batch.y[:, 1]
         batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            out[:, 1], pr_labels, pos_weight=pr_pos_weight
+            out[:, 1], pr_labels, pos_weight=self.pr_pos_weight
         )
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
@@ -128,12 +138,11 @@ class GNNModelTrainer:
             self.y.append(graph_label)
             self.groups.append(group)
 
-        global er_pos_weight, pr_pos_weight
-        er_pos_weight = torch.tensor(
+        self.er_pos_weight = torch.tensor(
             sum((labels[0] == 0 for labels in self.y))
             / sum((labels[0] == 1 for labels in self.y))
         )
-        pr_pos_weight = torch.tensor(
+        self.pr_pos_weight = torch.tensor(
             sum((labels[1] == 0 for labels in self.y))
             / sum((labels[1] == 1 for labels in self.y))
         )
@@ -178,12 +187,10 @@ class GNNModelTrainer:
             with open(f"{model_name}_PR.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
 
-            model = LightningModel(make_model())
-            checkpoint = ModelCheckpoint(
-                monitor="val_loss", filename="best"
-            )
+            model = LightningModel(make_model(), self.er_pos_weight, self.pr_pos_weight)
+            checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
             early_stopping = EarlyStopping(monitor="val_loss", patience=10)
-            logger = CSVLogger(save_dir="logs", name=model_name, version=f"{fold_num}")
+            logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
             trainer = Trainer(
                 accelerator="gpu",
                 accumulate_grad_batches=1024,  # i.e. all the batches
