@@ -60,18 +60,17 @@ class LightningModel(LightningModule):
         return self.model(*args, **kwargs)
 
     def compute_losses(self, batch):
+        global er_pos_weight, pr_pos_weight
         out = self.model(batch.x, batch.edge_index, batch.batch)
         er_labels = batch.y[:, 0]
         batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
             out[:, 0],
             er_labels,
-            pos_weight=torch.div(torch.sum(er_labels == 1), torch.sum(er_labels == 0)),
+            pos_weight=er_pos_weight,
         )
         pr_labels = batch.y[:, 1]
         batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            out[:, 1],
-            pr_labels,
-            pos_weight=torch.div(torch.sum(pr_labels == 1), torch.sum(pr_labels == 0)),
+            out[:, 1], pr_labels, pos_weight=pr_pos_weight
         )
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
@@ -131,6 +130,16 @@ class GNNModelTrainer:
             self.dummy.append(None)
             self.groups.append(group)
 
+        global er_pos_weight, pr_pos_weight
+        er_pos_weight = torch.tensor(
+            sum((labels[0] == 0 for labels in self.y))
+            / sum((labels[0] == 1 for labels in self.y))
+        )
+        pr_pos_weight = torch.tensor(
+            sum((labels[1] == 0 for labels in self.y))
+            / sum((labels[1] == 1 for labels in self.y))
+        )
+
     def train_and_validate(
         self,
         make_model: Callable[[], torch.nn.Module],
@@ -177,10 +186,11 @@ class GNNModelTrainer:
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
             trainer = Trainer(
                 accelerator="gpu",
-                max_epochs=epochs,
+                accumulate_grad_batches=1024,  # i.e. all the batches
                 callbacks=[checkpoint],
-                logger=logger,
                 enable_progress_bar=False,
+                logger=logger,
+                max_epochs=epochs,
             )
             train_loader = torch_geometric.loader.DataLoader(
                 torch.utils.data.Subset(self.dataset, train_idxs),
