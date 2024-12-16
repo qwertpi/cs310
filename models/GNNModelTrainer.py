@@ -2,7 +2,7 @@ from __future__ import annotations
 from functools import partial
 import pickle
 from time import time
-from typing import TYPE_CHECKING, Callable, ParamSpec
+from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
 
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
@@ -39,6 +39,43 @@ def float_wrapper(f: Callable[P, ConvertibleToFloat]):
         return float(f(*args, **kwargs))
 
     return ret_func
+
+
+T = TypeVar("T")
+
+
+def condition_metric_wrapper(
+    f: Callable[[list[int], list[float]], float], filter: Callable[[T], bool]
+):
+    def ret_func(labels: list[T], x1: list[int], x2: list[float]):
+        idxs = [i for i, l in enumerate(labels) if filter(l)]
+        x1 = [x1[i] for i in idxs]
+        x2 = [x2[i] for i in idxs]
+        if len(set(x1)) == 1:
+            return float("nan")
+        return f(x1, x2)
+
+    return ret_func
+
+
+def is_er_pos(t: torch.Tensor) -> bool:
+    return t[0]  # type: ignore
+
+
+def is_er_neg(t: torch.Tensor) -> bool:
+    return not t[0]  # type: ignore
+
+
+def is_pr_pos(t: torch.Tensor) -> bool:
+    return t[1]  # type: ignore
+
+
+def is_pr_neg(t: torch.Tensor) -> bool:
+    return not t[1]  # type: ignore
+
+
+def typed_roc(x1: list[int], x2: list[float]) -> float:
+    return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -165,7 +202,17 @@ class GNNModelTrainer:
             ("AUC_ROC", float_wrapper(roc_auc_score)),
             ("AUC_PR", float_wrapper(average_precision_score)),
         ]
-        ALL_METRICS = LABEL_METRICS + PROBABILITY_METRICS
+        CONDITIONED_PROBABILITY_METRICS: list[
+            tuple[str, Callable[[list[torch.Tensor], list[int], list[float]], float]]
+        ] = [
+            ("AUC_ROC_ER+", condition_metric_wrapper(typed_roc, is_er_pos)),
+            ("AUC_ROC_PR+", condition_metric_wrapper(typed_roc, is_pr_pos)),
+            ("AUC_ROC_ER-", condition_metric_wrapper(typed_roc, is_er_neg)),
+            ("AUC_ROC_PR-", condition_metric_wrapper(typed_roc, is_pr_neg)),
+        ]
+        ALL_METRICS = (
+            LABEL_METRICS + PROBABILITY_METRICS + CONDITIONED_PROBABILITY_METRICS
+        )
 
         NUM_FOLDS = 5
 
@@ -286,6 +333,13 @@ class GNNModelTrainer:
                         y_true_prob, y_pred_prob
                     )
                     metric_idx += 1
+                for n, (_, cp_metric_func) in enumerate(
+                    CONDITIONED_PROBABILITY_METRICS
+                ):
+                    scores[label_idx, fold_num, metric_idx] = cp_metric_func(
+                        y_true, y_true_prob, y_pred_prob
+                    )
+                    metric_idx += 1
 
                 with open(f"{model_name}_{label}.metrics", "a") as f:
                     for (metric_name, _), metric_val in zip(
@@ -294,8 +348,8 @@ class GNNModelTrainer:
                         f.write(f"{metric_name}: {metric_val}\n")
 
         for label_idx, label in enumerate(("ER", "PR")):
-            means = np.mean(scores[label_idx], axis=0)
-            std_devs = np.std(scores[label_idx], axis=0)
+            means = np.nanmean(scores[label_idx], axis=0)
+            std_devs = np.nanstd(scores[label_idx], axis=0)
 
             with open(f"{model_name}_{label}.metrics", "a") as f:
                 f.write("MEAN\n")
