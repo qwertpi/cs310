@@ -7,7 +7,7 @@ import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
 
-from GNNModelTrainerCrossLabel import GNNModelTrainer  # type: ignore
+from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class Model(torch.nn.Module):

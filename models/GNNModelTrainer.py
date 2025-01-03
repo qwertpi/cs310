@@ -49,11 +49,7 @@ def condition_metric_wrapper(
 ):
     def ret_func(labels: list[T], x1: list[int], x2: list[float]):
         idxs = [i for i, l in enumerate(labels) if filter(l)]
-        x1 = [x1[i] for i in idxs]
-        x2 = [x2[i] for i in idxs]
-        if len(set(x1)) == 1:
-            return float("nan")
-        return f(x1, x2)
+        return f([x1[i] for i in idxs], [x2[i] for i in idxs])
 
     return ret_func
 
@@ -75,7 +71,15 @@ def is_pr_neg(t: torch.Tensor) -> bool:
 
 
 def typed_roc(x1: list[int], x2: list[float]) -> float:
+    if len(set(x1)) < 2:
+        return float("nan")
     return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
+
+
+def typed_pr(x1: list[int], x2: list[float]) -> float:
+    if len(set(x1)) < 2:
+        return float("nan")
+    return float_wrapper(average_precision_score)(x1, x2)  # type: ignore
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -199,8 +203,8 @@ class GNNModelTrainer:
         PROBABILITY_METRICS: list[
             tuple[str, Callable[[list[int], list[float]], float]]
         ] = [
-            ("AUC_ROC", float_wrapper(roc_auc_score)),
-            ("AUC_PR", float_wrapper(average_precision_score)),
+            ("AUC_ROC", typed_roc),
+            ("AUC_PR", typed_pr),
         ]
         CONDITIONED_PROBABILITY_METRICS: list[
             tuple[str, Callable[[list[torch.Tensor], list[int], list[float]], float]]
