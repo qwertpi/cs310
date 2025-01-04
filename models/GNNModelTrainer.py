@@ -240,7 +240,7 @@ class GNNModelTrainer:
 
             model = LightningModel(make_model(), self.er_pos_weight, self.pr_pos_weight)
             checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
-            early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+            early_stopping = EarlyStopping(monitor="val_loss", patience=50)
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
             trainer = Trainer(
                 accelerator="gpu",

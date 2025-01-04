@@ -1,4 +1,5 @@
 from functools import partial
+from math import log
 import sys
 
 sys.path.insert(0, "..")
@@ -6,15 +7,17 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class GATBlock(torch.nn.Module):
-    def __init__(self, act: torch.nn.Module):
+    def __init__(self, act: torch.nn.Module, num_heads: int):
         super().__init__()
-        # 4 concatenated heads with 256 features => output dimension = 1024
-        self.att = torch_geometric.nn.GATConv(1024, 256, 4)
+        if not log(num_heads, 2).is_integer():
+            raise ValueError
+        self.att = torch_geometric.nn.GATConv(1024, 1024 // num_heads, num_heads)
         self.dropout = torch.nn.Dropout(0.5)
         self.act = act
 
@@ -23,9 +26,11 @@ class GATBlock(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self, num_blocks: int, act: torch.nn.Module):
+    def __init__(self, num_blocks: int, num_heads: int, act: torch.nn.Module):
         super().__init__()
-        self.blocks = torch.nn.ModuleList([GATBlock(act) for _ in range(num_blocks)])
+        self.blocks = torch.nn.ModuleList(
+            [GATBlock(act, num_heads) for _ in range(num_blocks)]
+        )
         self.readout = torch.nn.Linear(1024, 2)
 
     def _make_block(self):
@@ -43,7 +48,10 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for act in (torch.nn.ReLU(), torch.nn.Identity()):
+    for num_heads in tqdm([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]):
         trainer.train_and_validate(
-            partial(Model, 3, act=act), f"gat_{str(act).split('(')[0]}", 64, 200
+            partial(Model, 3, num_heads, act=torch.nn.Identity()),
+            f"gat_h{num_heads}_b3",
+            64,
+            10**6,
         )

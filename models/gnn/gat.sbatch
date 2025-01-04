@@ -5,8 +5,8 @@
 # eagle has less vram
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
-#SBATCH --mem=6G
-#SBATCH --time=0:25:00
+#SBATCH --mem=7G
+#SBATCH --time=14:00:00
 #
 #SBATCH --mail-type=END,FAIL
 #SBATCH --output=slurm_%j.out
