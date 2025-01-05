@@ -9,8 +9,8 @@ from numpy import format_float_positional
 def main(pattern: str):
     paths = glob.glob(pattern)
     for receptor_paths in (
-        (path for path in paths if "ER_" in path),
-        (path for path in paths if "PR_" in path),
+        (path for path in paths if "_ER" in path),
+        (path for path in paths if "_PR" in path),
     ):
         best_per_metric: dict[str, tuple[float, str]] = {}
         worst_per_metric: dict[str, tuple[float, str]] = {}
