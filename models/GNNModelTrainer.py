@@ -101,11 +101,13 @@ class LightningModel(LightningModule):
         torch_model: torch.nn.Module,
         er_pos_weight: torch.Tensor,
         pr_pos_weight: torch.Tensor,
+        weight_decay: float,
     ):
         super().__init__()
         self.model = torch_model
         self.er_pos_weight = er_pos_weight
         self.pr_pos_weight = pr_pos_weight
+        self.weight_decay = weight_decay
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -163,7 +165,7 @@ class LightningModel(LightningModule):
         self.log("val_loss", loss, batch_size=len(batch), on_epoch=True, on_step=False)
 
     def configure_optimizers(self):
-        return torch.optim.Adam(self.parameters())
+        return torch.optim.AdamW(self.parameters(), weight_decay=self.weight_decay)
 
 
 class GNNModelTrainer:
@@ -193,7 +195,7 @@ class GNNModelTrainer:
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
         batch_size: int,
-        epochs: int,
+        weight_decay: float,
     ):
         LABEL_METRICS: list[tuple[str, Callable[[list[int], list[int]], float]]] = [
             ("Sensitivity", recall_score),
@@ -238,7 +240,9 @@ class GNNModelTrainer:
             with open(f"{model_name}_PR.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
 
-            model = LightningModel(make_model(), self.er_pos_weight, self.pr_pos_weight)
+            model = LightningModel(
+                make_model(), self.er_pos_weight, self.pr_pos_weight, weight_decay
+            )
             checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
             early_stopping = EarlyStopping(monitor="val_loss", patience=50)
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
@@ -248,7 +252,7 @@ class GNNModelTrainer:
                 callbacks=[checkpoint, early_stopping],
                 enable_progress_bar=False,
                 logger=logger,
-                max_epochs=epochs,
+                max_epochs=-1,
             )
             train_loader = torch_geometric.loader.DataLoader(
                 torch.utils.data.Subset(self.dataset, train_idxs),

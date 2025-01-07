@@ -48,10 +48,10 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for num_blocks in tqdm([1, 2, 3, 4, 5, 6, 7, 8]):
+    for weight_decay in tqdm([1, 10e-1, 10e-2, 10e-3, 10e-4, 10e-5]):
         trainer.train_and_validate(
-            partial(Model, num_blocks, 1, act=torch.nn.Identity()),
-            f"gat_h1_b{num_blocks}",
+            partial(Model, 2, 1, act=torch.nn.Identity()),
+            f"gat_h1_b2_w{weight_decay}",
             64,
-            10**6,
+            weight_decay,
         )
