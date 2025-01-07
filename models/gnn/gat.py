@@ -48,10 +48,10 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for num_heads in tqdm([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]):
+    for num_blocks in tqdm([1, 2, 3, 4, 5, 6, 7, 8]):
         trainer.train_and_validate(
-            partial(Model, 3, num_heads, act=torch.nn.Identity()),
-            f"gat_h{num_heads}_b3",
+            partial(Model, num_blocks, 1, act=torch.nn.Identity()),
+            f"gat_h1_b{num_blocks}",
             64,
             10**6,
         )

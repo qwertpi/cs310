@@ -35,15 +35,14 @@ for plot_num, receptor_paths in enumerate(
 
     x, idxs = np.unique(np.log2(widths), return_index=True)
     y = np.empty_like(x, dtype=float)
-    for i in idxs:
-        y[i] = np.mean(metrics[np.where(widths == widths[i])])
+    for i, j in enumerate(idxs):
+        y[i] = np.mean(metrics[np.where(widths == widths[j])])
     ax1 = fig.add_subplot(2, 2, plot_num * 2 - 1)
     ax1.bar(x, y - y.min(), bottom=y.min())
     x, idxs = np.unique(depths, return_index=True)
-    print(x)
     y = np.empty_like(x, dtype=float)
-    for i in idxs:
-        y[i] = np.mean(metrics[np.where(depths == depths[i])])
+    for i, j in enumerate(idxs):
+        y[i] = np.mean(metrics[np.where(depths == depths[j])])
     print(y)
     ax2 = fig.add_subplot(2, 2, plot_num * 2)
     ax2.bar(x, y - y.min(), bottom=y.min())
