@@ -1,6 +1,7 @@
 from __future__ import annotations
 from functools import partial
 import pickle
+from shutil import rmtree
 from time import time
 from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
 
@@ -194,7 +195,6 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
-        batch_size: int,
         weight_decay: float,
     ):
         LABEL_METRICS: list[tuple[str, Callable[[list[int], list[int]], float]]] = [
@@ -221,7 +221,6 @@ class GNNModelTrainer:
         )
 
         NUM_FOLDS = 5
-
         # [ER scores, PR scores]
         scores = np.empty((2, NUM_FOLDS, len(ALL_METRICS)))
         num_epochs_used = np.empty((NUM_FOLDS))
@@ -234,6 +233,7 @@ class GNNModelTrainer:
             f.write("")
         with open(f"{model_name}_PR.metrics", "w") as f:
             f.write("")
+        batch_size = 1024
         for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
             with open(f"{model_name}_ER.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
@@ -243,30 +243,42 @@ class GNNModelTrainer:
             model = LightningModel(
                 make_model(), self.er_pos_weight, self.pr_pos_weight, weight_decay
             )
-            checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
             early_stopping = EarlyStopping(monitor="val_loss", patience=50)
-            logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
-            trainer = Trainer(
-                accelerator="gpu",
-                accumulate_grad_batches=1024,  # i.e. all the batches
-                callbacks=[checkpoint, early_stopping],
-                enable_progress_bar=False,
-                logger=logger,
-                max_epochs=-1,
-            )
-            train_loader = torch_geometric.loader.DataLoader(
-                torch.utils.data.Subset(self.dataset, train_idxs),
-                batch_size=batch_size,
-                shuffle=True,
-            )
-            validation_loader = torch_geometric.loader.DataLoader(
-                torch.utils.data.Subset(self.dataset, validation_idxs),
-                batch_size=batch_size,
-            )
 
-            t0 = time()
-            trainer.fit(model, train_loader, validation_loader)
-            t1 = time()
+            t0 = t1 = checkpoint = None
+            while batch_size > 1:
+                try:
+                    logger = CSVLogger(
+                        save_dir="logs", name=model_name, version=fold_num
+                    )
+                    checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
+                    trainer = Trainer(
+                        accelerator="gpu",
+                        accumulate_grad_batches=1024,  # i.e. all the batches
+                        callbacks=[checkpoint, early_stopping],
+                        enable_progress_bar=False,
+                        logger=logger,
+                        max_epochs=-1,
+                    )
+                    train_loader = torch_geometric.loader.DataLoader(
+                        torch.utils.data.Subset(self.dataset, train_idxs),
+                        batch_size=batch_size,
+                        shuffle=True,
+                    )
+                    validation_loader = torch_geometric.loader.DataLoader(
+                        torch.utils.data.Subset(self.dataset, validation_idxs),
+                        batch_size=batch_size,
+                    )
+
+                    t0 = time()
+                    trainer.fit(model, train_loader, validation_loader)
+                    t1 = time()
+                    break
+                except torch.cuda.OutOfMemoryError:
+                    batch_size //= 2
+                    rmtree(f"logs/{model_name}/version_{fold_num}")
+            if t0 is None or t1 is None or checkpoint is None:
+                return
 
             train_times[fold_num] = t1 - t0
             with open(f"{model_name}_ER.metrics", "a") as f:

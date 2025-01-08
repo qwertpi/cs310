@@ -33,11 +33,6 @@ class Model(torch.nn.Module):
         )
         self.readout = torch.nn.Linear(1024, 2)
 
-    def _make_block(self):
-        att = torch_geometric.nn.GATConv(1024, 256, 4)
-        norm = torch.nn.BatchNorm1d(1024)
-        return torch.nn.Sequential(att, norm, self.act)
-
     def forward(self, x, edge_index, batch):
         for block in self.blocks:
             h = block(x, edge_index)
