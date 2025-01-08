@@ -312,6 +312,7 @@ class GNNModelTrainer:
             fig.legend()
             fig.tight_layout()
             fig.savefig(f"{model_name}_loss_PR_{fold_num}.png")
+            plt.close(fig)
 
             model.load_state_dict(ckpt["state_dict"])
             model.eval()
