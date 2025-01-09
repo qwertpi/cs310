@@ -19,7 +19,7 @@ class Subnet(torch.nn.Module):
         self.bn = torch.nn.BatchNorm1d(out_dim)
 
     def forward(self, x):
-        return torch.nn.ELU()(self.bn(self.lin(x)))
+        return self.bn(self.lin(x))
 
 
 class Block(torch.nn.Module):
@@ -34,7 +34,7 @@ class Block(torch.nn.Module):
             h = self.subblock(x, edge_index)
         else:
             h = self.subblock(x)
-        h = torch.nn.ELU()(self.lin(h))
+        h = (self.lin(h))
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         return self.dropout(h)
 
