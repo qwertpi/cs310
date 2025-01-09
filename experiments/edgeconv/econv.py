@@ -26,7 +26,6 @@ class Block(torch.nn.Module):
     def __init__(self, subblock: torch.nn.Module):
         super().__init__()
         self.subblock = subblock
-        self.lin = torch_geometric.nn.Linear(1024, 2)
         self.dropout = torch.nn.Dropout(0.1)
 
     def forward(self, x, edge_index, batch):
@@ -34,7 +33,6 @@ class Block(torch.nn.Module):
             h = self.subblock(x, edge_index)
         else:
             h = self.subblock(x)
-        h = (self.lin(h))
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         return self.dropout(h)
 
@@ -46,7 +44,7 @@ class Model(torch.nn.Module):
             [Subnet(1024, 1024), self._make_edgeconv(), self._make_edgeconv()]
         )
         self.blocks = torch.nn.ModuleList([Block(subblock) for subblock in subblocks])
-        self.readout = torch.nn.Linear(2, 2)
+        self.readout = torch.nn.Linear(1024, 2)
 
     def _make_edgeconv(self):
         return torch_geometric.nn.EdgeConv(Subnet(2048, 1024), aggr="max")
@@ -62,6 +60,6 @@ if __name__ == "__main__":
     trainer = GNNModelTrainer()
     trainer.train_and_validate(
         partial(Model),
-        "econv",
+        "econv_nolocalproj",
         1e-2,
     )
