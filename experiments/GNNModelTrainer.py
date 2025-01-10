@@ -1,5 +1,4 @@
 from __future__ import annotations
-from functools import partial
 import pickle
 from shutil import rmtree
 from time import time
@@ -20,8 +19,6 @@ from pytorch_lightning.loggers import CSVLogger
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.metrics import (  # type: ignore
     average_precision_score,
-    balanced_accuracy_score,
-    recall_score,
     roc_auc_score,
 )
 import torch
@@ -46,11 +43,19 @@ T = TypeVar("T")
 
 
 def condition_metric_wrapper(
-    f: Callable[[list[int], list[float]], float], filter: Callable[[T], bool]
+    f: Callable[[list[int], list[float], list[int], list[float]], float],
+    filter: Callable[[T], bool],
 ):
-    def ret_func(labels: list[T], x1: list[int], x2: list[float]):
+    def ret_func(
+        labels: list[T], x1: list[int], y1: list[float], x2: list[int], y2: list[float]
+    ):
         idxs = [i for i, l in enumerate(labels) if filter(l)]
-        return f([x1[i] for i in idxs], [x2[i] for i in idxs])
+        return f(
+            [x1[i] for i in idxs],
+            [y1[i] for i in idxs],
+            [x2[i] for i in idxs],
+            [y2[i] for i in idxs],
+        )
 
     return ret_func
 
@@ -169,6 +174,29 @@ class LightningModel(LightningModule):
         return torch.optim.AdamW(self.parameters(), weight_decay=self.weight_decay)
 
 
+def fstify2a(f):
+    def inner(x1, y1, x2, y2, **kwargs):
+        return f(x1, y1, **kwargs)
+
+    return inner
+
+
+def sndify2a(f):
+    def inner(x1, y1, x2, y2, **kwargs):
+        return f(x2, y2, **kwargs)
+
+    return inner
+
+
+def roc_labels_agree(
+    er_true: list[int], er_pred: list[float], pr_true: list[int], pr_pred: list[float]
+):
+    return typed_roc(
+        [e == p for e, p in zip(er_true, pr_true)],
+        [e * p + (1 - e) * (1 - p) for e, p in zip(er_pred, pr_pred)],
+    )
+
+
 class GNNModelTrainer:
     def __init__(self):
         with open("../../../data/train_data.pkl", "rb") as f:
@@ -197,47 +225,64 @@ class GNNModelTrainer:
         model_name: str,
         weight_decay: float,
     ):
-        LABEL_METRICS: list[tuple[str, Callable[[list[int], list[int]], float]]] = [
-            ("Sensitivity", recall_score),
-            ("Specificity", partial(recall_score, pos_label=0)),
-            ("Balanced accuracy", balanced_accuracy_score),
-        ]
         PROBABILITY_METRICS: list[
-            tuple[str, Callable[[list[int], list[float]], float]]
+            tuple[
+                str, Callable[[list[int], list[float], list[int], list[float]], float]
+            ]
         ] = [
-            ("AUC_ROC", typed_roc),
-            ("AUC_PR", typed_pr),
+            ("AUC_ROC_ER", fstify2a(typed_roc)),
+            ("AUC_PR_ER", fstify2a(typed_pr)),
+            ("AUC_ROC_PR", sndify2a(typed_roc)),
+            ("AUC_PR_PR", sndify2a(typed_pr)),
+            ("AUC_ROC_LABELSAGREE", roc_labels_agree),
         ]
         CONDITIONED_PROBABILITY_METRICS: list[
-            tuple[str, Callable[[list[torch.Tensor], list[int], list[float]], float]]
+            tuple[
+                str,
+                Callable[
+                    [
+                        list[torch.Tensor],
+                        list[int],
+                        list[float],
+                        list[int],
+                        list[float],
+                    ],
+                    float,
+                ],
+            ]
         ] = [
-            ("AUC_ROC_ER+", condition_metric_wrapper(typed_roc, is_er_pos)),
-            ("AUC_ROC_PR+", condition_metric_wrapper(typed_roc, is_pr_pos)),
-            ("AUC_ROC_ER-", condition_metric_wrapper(typed_roc, is_er_neg)),
-            ("AUC_ROC_PR-", condition_metric_wrapper(typed_roc, is_pr_neg)),
+            (
+                "AUC_ROC_ER_PR+",
+                condition_metric_wrapper(fstify2a(typed_roc), is_pr_pos),
+            ),
+            (
+                "AUC_ROC_ER_PR-",
+                condition_metric_wrapper(fstify2a(typed_roc), is_pr_neg),
+            ),
+            (
+                "AUC_ROC_PR_ER+",
+                condition_metric_wrapper(sndify2a(typed_roc), is_er_pos),
+            ),
+            (
+                "AUC_ROC_PR_ER-",
+                condition_metric_wrapper(sndify2a(typed_roc), is_er_neg),
+            ),
         ]
-        ALL_METRICS = (
-            LABEL_METRICS + PROBABILITY_METRICS + CONDITIONED_PROBABILITY_METRICS
-        )
+        ALL_METRICS = PROBABILITY_METRICS + CONDITIONED_PROBABILITY_METRICS
 
         NUM_FOLDS = 5
-        # [ER scores, PR scores]
-        scores = np.empty((2, NUM_FOLDS, len(ALL_METRICS)))
+        scores = np.empty((NUM_FOLDS, len(ALL_METRICS)))
         num_epochs_used = np.empty((NUM_FOLDS))
         train_times = np.empty((NUM_FOLDS))
         folds = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True).split(
             self.y_compact, self.y_compact, self.groups
         )
         # Delete the file if it already exists
-        with open(f"{model_name}_ER.metrics", "w") as f:
-            f.write("")
-        with open(f"{model_name}_PR.metrics", "w") as f:
+        with open(f"{model_name}.metrics", "w") as f:
             f.write("")
         batch_size = 1024
         for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
-            with open(f"{model_name}_ER.metrics", "a") as f:
-                f.write(f"{fold_num}\n")
-            with open(f"{model_name}_PR.metrics", "a") as f:
+            with open(f"{model_name}.metrics", "a") as f:
                 f.write(f"{fold_num}\n")
 
             model = LightningModel(
@@ -281,16 +326,12 @@ class GNNModelTrainer:
                 return
 
             train_times[fold_num] = t1 - t0
-            with open(f"{model_name}_ER.metrics", "a") as f:
-                f.write(f"Train time: {t1 - t0}\n")
-            with open(f"{model_name}_PR.metrics", "a") as f:
+            with open(f"{model_name}.metrics", "a") as f:
                 f.write(f"Train time: {t1 - t0}\n")
 
             ckpt = torch.load(checkpoint.best_model_path)
             num_epochs_used[fold_num] = ckpt["epoch"]
-            with open(f"{model_name}_ER.metrics", "a") as f:
-                f.write(f"Epochs: {ckpt['epoch']}\n")
-            with open(f"{model_name}_PR.metrics", "a") as f:
+            with open(f"{model_name}.metrics", "a") as f:
                 f.write(f"Epochs: {ckpt['epoch']}\n")
             logs = pd.read_csv(f"logs/{model_name}/version_{fold_num}/metrics.csv")
             epochs_list = range(logs["epoch"].min(), logs["epoch"].max() + 1)
@@ -338,49 +379,36 @@ class GNNModelTrainer:
                         )
                     )
                     y_true.extend(batch_data.y)
-            for label_idx, label in enumerate(("ER", "PR")):
-                metric_idx = 0
-                y_pred_label = [round(t[label_idx].item()) for t in y_pred]
-                y_true_label = [round(t[label_idx].item()) for t in y_true]
-                for _, l_metric_func in LABEL_METRICS:
-                    scores[label_idx, fold_num, metric_idx] = l_metric_func(
-                        y_true_label, y_pred_label
-                    )
-                    metric_idx += 1
-                y_pred_prob = [float(t[label_idx].item()) for t in y_pred]
-                y_true_prob = [int(t[label_idx].item()) for t in y_true]
-                for _, p_metric_func in PROBABILITY_METRICS:
-                    scores[label_idx, fold_num, metric_idx] = p_metric_func(
-                        y_true_prob, y_pred_prob
-                    )
-                    metric_idx += 1
-                for n, (_, cp_metric_func) in enumerate(
-                    CONDITIONED_PROBABILITY_METRICS
-                ):
-                    scores[label_idx, fold_num, metric_idx] = cp_metric_func(
-                        y_true, y_true_prob, y_pred_prob
-                    )
-                    metric_idx += 1
+            metric_idx = 0
+            y_pred_er = [float(t[0].item()) for t in y_pred]
+            y_pred_pr = [float(t[1].item()) for t in y_pred]
+            y_true_er = [round(t[0].item()) for t in y_true]
+            y_true_pr = [round(t[1].item()) for t in y_true]
+            for _, p_metric_func in PROBABILITY_METRICS:
+                scores[fold_num, metric_idx] = p_metric_func(
+                    y_true_er, y_pred_er, y_true_pr, y_pred_pr
+                )
+                metric_idx += 1
+            for n, (_, cp_metric_func) in enumerate(CONDITIONED_PROBABILITY_METRICS):
+                scores[fold_num, metric_idx] = cp_metric_func(
+                    y_true, y_true_er, y_pred_er, y_true_pr, y_pred_pr
+                )
+                metric_idx += 1
 
-                with open(f"{model_name}_{label}.metrics", "a") as f:
-                    for (metric_name, _), metric_val in zip(
-                        ALL_METRICS, scores[label_idx, fold_num]
-                    ):
-                        f.write(f"{metric_name}: {metric_val}\n")
+            with open(f"{model_name}.metrics", "a") as f:
+                for (metric_name, _), metric_val in zip(ALL_METRICS, scores[fold_num]):
+                    f.write(f"{metric_name}: {metric_val}\n")
+        means = np.nanmean(scores, axis=0)
+        std_devs = np.nanstd(scores, axis=0)
+        with open(f"{model_name}.metrics", "a") as f:
+            f.write("MEAN\n")
+            for (metric_name, _), average in zip(ALL_METRICS, means):
+                f.write(f"{metric_name}: {average}\n")
+            f.write(f"Train time: {np.mean(train_times)}\n")
+            f.write(f"Epochs: {np.mean(num_epochs_used)}\n")
 
-        for label_idx, label in enumerate(("ER", "PR")):
-            means = np.nanmean(scores[label_idx], axis=0)
-            std_devs = np.nanstd(scores[label_idx], axis=0)
-
-            with open(f"{model_name}_{label}.metrics", "a") as f:
-                f.write("MEAN\n")
-                for (metric_name, _), average in zip(ALL_METRICS, means):
-                    f.write(f"{metric_name}: {average}\n")
-                f.write(f"Train time: {np.mean(train_times)}\n")
-                f.write(f"Epochs: {np.mean(num_epochs_used)}\n")
-
-                f.write("STD_DEV\n")
-                for (metric_name, _), var in zip(ALL_METRICS, std_devs):
-                    f.write(f"{metric_name}: {var}\n")
-                f.write(f"Train time: {np.std(train_times)}\n")
-                f.write(f"Epochs: {np.std(num_epochs_used)}\n")
+            f.write("STD_DEV\n")
+            for (metric_name, _), var in zip(ALL_METRICS, std_devs):
+                f.write(f"{metric_name}: {var}\n")
+            f.write(f"Train time: {np.std(train_times)}\n")
+            f.write(f"Epochs: {np.std(num_epochs_used)}\n")
