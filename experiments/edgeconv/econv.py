@@ -8,6 +8,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm.contrib.itertools import product
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -38,10 +39,10 @@ class Block(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, num_initial_layers: int, num_middle_layers: int):
         super().__init__()
         subblocks = torch.nn.ModuleList(
-            [Subnet(1024, 1024), self._make_edgeconv(), self._make_edgeconv()]
+            [Subnet(1024, 1024) for _ in range(num_initial_layers)] + [self._make_edgeconv() for _ in range(num_middle_layers)]
         )
         self.blocks = torch.nn.ModuleList([Block(subblock) for subblock in subblocks])
         self.readout = torch.nn.Linear(1024, 2)
@@ -58,8 +59,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(
-        partial(Model),
-        "econv_nolocalproj",
-        1e-2,
-    )
+    for initial, middle in product([0, 1, 2], [1, 2, 3]):
+        trainer.train_and_validate(
+            partial(Model, initial, middle),
+            f"econv_s{initial}_m{middle}",
+            1e-2,
+        )
