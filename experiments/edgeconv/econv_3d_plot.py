@@ -2,22 +2,16 @@ import glob
 import numpy as np
 from matplotlib import pyplot as plt
 
-paths = glob.glob("econv_s*_m*.metrics")
 fig = plt.figure()
-for recepetor_num, receptor_paths in enumerate(
-    (
-        (path for path in paths if "_ER." in path),
-        (path for path in paths if "_PR." in path),
-    ),
-    start=1,
-):
-    starts = np.empty(len(paths) // 2, dtype=int)
-    middles = np.empty(len(paths) // 2, dtype=float)
-    metrics = np.empty(len(paths) // 2, dtype=float)
-    for i, path in enumerate(receptor_paths):
+for recepetor_num, recepetor in ((1, "ER"), (2, "PR")):
+    paths = glob.glob("econv_act_s*_m*.metrics")
+    starts = np.empty(len(paths), dtype=int)
+    middles = np.empty(len(paths), dtype=float)
+    metrics = np.empty(len(paths), dtype=float)
+    for i, path in enumerate(paths):
         start, tail = path.split("_s")[1].split("_m")
         starts[i] = start
-        middles[i] = tail.split("_")[0]
+        middles[i] = tail.split("_")[0].split(".metrics")[0]
         with open(path, "r") as f:
             averages = False
             for line in f.read().splitlines():
@@ -28,7 +22,7 @@ for recepetor_num, receptor_paths in enumerate(
                     continue
 
                 split_line = line.split(": ")
-                if split_line[0] == "AUC_ROC":
+                if split_line[0] == f"AUC_ROC_{recepetor}":
                     metrics[i] = float(split_line[1])
                     break
 
