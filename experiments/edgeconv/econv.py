@@ -25,7 +25,7 @@ class Subnet(torch.nn.Module, ABC):
         self.act = act
 
     def forward(self, x):
-        return self.act(self.bn(self.lin(x)))
+        return self.bn(self.lin(x))
 
 
 class InitialSubnet(Subnet):
@@ -51,7 +51,7 @@ class Block(torch.nn.Module):
             h = self.subblock(x, edge_index)
         else:
             h = self.subblock(x)
-        h = torch.nn.functional.elu(self.bn(self.lin(h)))
+        h = self.bn(self.lin(h))
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         return self.dropout(h)
 
@@ -78,10 +78,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-
-    for start, middle in tqdm([(0, 1), (0, 2), (0, 3), (1, 1), (1, 2), (2, 1)]):
+    for start, middle in tqdm([(1, 2), (0, 3)]):
         trainer.train_and_validate(
             partial(Model, start, middle),
-            f"econv_act_s{start}_m{middle}",
+            f"econv_noact_s{start}_m{middle}",
             1e-2,
         )
