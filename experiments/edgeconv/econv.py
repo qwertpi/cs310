@@ -3,26 +3,21 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import sys
-from typing import Callable
 
 sys.path.insert(0, "..")
 
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class Subnet(torch.nn.Module, ABC):
     @abstractmethod
-    def __init__(
-        self, in_dim: int, out_dim: int, act: Callable[[torch.Tensor], torch.Tensor]
-    ):
+    def __init__(self, in_dim: int, out_dim: int):
         super().__init__()
         self.lin = torch_geometric.nn.Linear(in_dim, out_dim)
         self.bn = torch.nn.BatchNorm1d(out_dim)
-        self.act = act
 
     def forward(self, x):
         return self.bn(self.lin(x))
@@ -30,12 +25,12 @@ class Subnet(torch.nn.Module, ABC):
 
 class InitialSubnet(Subnet):
     def __init__(self):
-        super().__init__(1024, 1024, torch.nn.functional.gelu)
+        super().__init__(1024, 1024)
 
 
 class EdgeConvSubnet(Subnet):
     def __init__(self):
-        super().__init__(2048, 1024, torch.nn.functional.elu)
+        super().__init__(2048, 1024)
 
 
 class Block(torch.nn.Module):
@@ -78,9 +73,8 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for start, middle in tqdm([(1, 2), (0, 3)]):
-        trainer.train_and_validate(
-            partial(Model, start, middle),
-            f"econv_noact_s{start}_m{middle}",
-            1e-2,
-        )
+    trainer.train_and_validate(
+        partial(Model, 0, 3),
+        "econv_s0_m3",
+        1e-2,
+    )
