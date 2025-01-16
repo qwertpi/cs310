@@ -1,3 +1,4 @@
+from functools import partial
 import sys
 
 sys.path.insert(0, "..")
@@ -18,25 +19,23 @@ trainer = PatchModelTrainer()
 
 def train_model():
     for model in (XGBClassifier, XGBRFClassifier):
-        for receptor in ("ER", "PR"):
-            class_imbalance = (NUM_EXAMPLES - NUM_POS[receptor]) / NUM_POS[receptor]
-            for gamma in (0, 1, 100):
-                for l1 in (0, 1, 100):
-                    for l2 in (0, 1, 100):
-                        trainer.train_and_validate(
-                            lambda: make_pipeline(
-                                model(
-                                    device="gpu",
-                                    gamma=gamma,
-                                    reg_alpha=l1,
-                                    reg_lambda=l2,
-                                    scale_pos_weight=class_imbalance,
-                                ),
-                            ),
-                            MEAN_AGGREGATOR,
-                            f"{model.__name__}_{receptor}_gamma={gamma}_l1={l1}_l2={l2}",
-                            {"ER": 0, "PR": 1}[receptor],
-                        )
+        er_class_imbalance = (NUM_EXAMPLES - NUM_POS["ER"]) / NUM_POS["ER"]
+        pr_class_imbalance = (NUM_EXAMPLES - NUM_POS["PR"]) / NUM_POS["PR"]
+        for gamma in (0, 1, 100):
+            for l1 in (0, 1, 100):
+                for l2 in (0, 1, 100):
+                    model_func = partial(
+                        model, device="gpu", gamma=gamma, reg_alpha=l1, reg_lambda=l2
+                    )
+                    trainer.train_and_validate(
+                        lambda: make_pipeline(
+                            model_func(scale_pos_weight=er_class_imbalance)
+                        ),
+                        lambda: make_pipeline(
+                            model_func(scale_pos_weight=pr_class_imbalance)
+                        ),
+                        f"{model.__name__}_gamma={gamma}_l1={l1}_l2={l2}",
+                    )
 
 
 if __name__ == "__main__":

@@ -1,0 +1,195 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
+
+if TYPE_CHECKING:
+    from _typeshed import ConvertibleToFloat
+
+import numpy as np
+from sklearn.metrics import (  # type: ignore
+    average_precision_score,
+    roc_auc_score,
+)
+
+P = ParamSpec("P")
+
+
+def float_wrapper(f: Callable[P, ConvertibleToFloat]):
+    def ret_func(*args: P.args, **kwargs: P.kwargs):
+        return float(f(*args, **kwargs))
+
+    return ret_func
+
+
+T = TypeVar("T")
+
+
+def condition_metric_wrapper(
+    f: Callable[[list[int], list[float], list[int], list[float]], float],
+    filter: Callable[[T], bool],
+):
+    def ret_func(
+        labels: list[T], x1: list[int], y1: list[float], x2: list[int], y2: list[float]
+    ):
+        idxs = [i for i, l in enumerate(labels) if filter(l)]
+        return f(
+            [x1[i] for i in idxs],
+            [y1[i] for i in idxs],
+            [x2[i] for i in idxs],
+            [y2[i] for i in idxs],
+        )
+
+    return ret_func
+
+
+def is_er_pos(t: list[int]) -> bool:
+    return t[0]  # type: ignore
+
+
+def is_er_neg(t: list[int]) -> bool:
+    return not t[0]  # type: ignore
+
+
+def is_pr_pos(t: list[int]) -> bool:
+    return t[1]  # type: ignore
+
+
+def is_pr_neg(t: list[int]) -> bool:
+    return not t[1]  # type: ignore
+
+
+def typed_roc(x1: list[int], x2: list[float]) -> float:
+    if len(set(x1)) < 2:
+        return float("nan")
+    return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
+
+
+def typed_pr(x1: list[int], x2: list[float]) -> float:
+    if len(set(x1)) < 2:
+        return float("nan")
+    return float_wrapper(average_precision_score)(x1, x2)  # type: ignore
+
+
+def fstify2a(f):
+    def inner(x1, y1, x2, y2, **kwargs):
+        return f(x1, y1, **kwargs)
+
+    return inner
+
+
+def sndify2a(f):
+    def inner(x1, y1, x2, y2, **kwargs):
+        return f(x2, y2, **kwargs)
+
+    return inner
+
+
+def roc_labels_agree(
+    er_true: list[int], er_pred: list[float], pr_true: list[int], pr_pred: list[float]
+):
+    return typed_roc(
+        [e == p for e, p in zip(er_true, pr_true)],
+        [e * p + (1 - e) * (1 - p) for e, p in zip(er_pred, pr_pred)],
+    )
+
+
+class ModelEvaluator:
+    PROBABILITY_METRICS: list[
+        tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
+    ] = [
+        ("AUC_ROC_ER", fstify2a(typed_roc)),
+        ("AUC_PR_ER", fstify2a(typed_pr)),
+        ("AUC_ROC_PR", sndify2a(typed_roc)),
+        ("AUC_PR_PR", sndify2a(typed_pr)),
+        ("AUC_ROC_LABELSAGREE", roc_labels_agree),
+    ]
+    CONDITIONED_PROBABILITY_METRICS: list[
+        tuple[
+            str,
+            Callable[
+                [
+                    list[list[int]],
+                    list[int],
+                    list[float],
+                    list[int],
+                    list[float],
+                ],
+                float,
+            ],
+        ]
+    ] = [
+        (
+            "AUC_ROC_ER_PR+",
+            condition_metric_wrapper(fstify2a(typed_roc), is_pr_pos),
+        ),
+        (
+            "AUC_ROC_ER_PR-",
+            condition_metric_wrapper(fstify2a(typed_roc), is_pr_neg),
+        ),
+        (
+            "AUC_ROC_PR_ER+",
+            condition_metric_wrapper(sndify2a(typed_roc), is_er_pos),
+        ),
+        (
+            "AUC_ROC_PR_ER-",
+            condition_metric_wrapper(sndify2a(typed_roc), is_er_neg),
+        ),
+    ]
+    ALL_METRICS = PROBABILITY_METRICS + CONDITIONED_PROBABILITY_METRICS
+
+    def __init__(self, num_folds: int, file: TextIO):
+        self.fold_num = 0
+        self.scores = np.empty((num_folds, len(self.ALL_METRICS)))
+        self.train_times = np.empty((num_folds))
+        self.epochs = np.empty((num_folds))
+        self.file = file
+
+    def evalaute_fold(
+        self,
+        time: float,
+        epochs: int,
+        y_true: list[list[int]],
+        y_pred_er: list[float],
+        y_pred_pr: list[float],
+    ):
+        self.file.write(f"{self.fold_num}\n")
+        self.train_times[self.fold_num] = time / 60
+        self.file.write(f"Train time: {self.train_times[self.fold_num]}\n")
+        self.epochs[self.fold_num] = epochs
+        self.file.write(f"Epochs: {epochs}\n")
+
+        y_true_er = [t[0] for t in y_true]
+        y_true_pr = [t[1] for t in y_true]
+        metric_idx = 0
+        for _, p_metric_func in self.PROBABILITY_METRICS:
+            self.scores[self.fold_num, metric_idx] = p_metric_func(
+                y_true_er, y_pred_er, y_true_pr, y_pred_pr
+            )
+            metric_idx += 1
+        for n, (_, cp_metric_func) in enumerate(self.CONDITIONED_PROBABILITY_METRICS):
+            self.scores[self.fold_num, metric_idx] = cp_metric_func(
+                y_true, y_true_er, y_pred_er, y_true_pr, y_pred_pr
+            )
+            metric_idx += 1
+
+        for (metric_name, _), metric_val in zip(
+            self.ALL_METRICS, self.scores[self.fold_num]
+        ):
+            self.file.write(f"{metric_name}: {metric_val}\n")
+
+        self.fold_num += 1
+
+    def close(self):
+        means = np.nanmean(self.scores, axis=0)
+        std_devs = np.nanstd(self.scores, axis=0)
+        self.file.write("MEAN\n")
+        for (metric_name, _), average in zip(self.ALL_METRICS, means):
+            self.file.write(f"{metric_name}: {average}\n")
+        self.file.write(f"Train time: {np.mean(self.train_times)}\n")
+        self.file.write(f"Epochs: {np.mean(self.epochs)}\n")
+
+        self.file.write("STD_DEV\n")
+        for (metric_name, _), var in zip(self.ALL_METRICS, std_devs):
+            self.file.write(f"{metric_name}: {var}\n")
+        self.file.write(f"Train time: {np.std(self.train_times)}\n")
+        self.file.write(f"Epochs: {np.std(self.epochs)}\n")
+        self.file.close()
