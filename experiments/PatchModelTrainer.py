@@ -3,17 +3,17 @@ import pickle
 from time import time
 from typing import Callable
 
-import numpy as np
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from sklearn.pipeline import Pipeline  # type: ignore
 import torch
-from torch_geometric.data import Data  # type: ignore
-from torch_geometric.typing import Tensor  # type: ignore
 
 if torch.cuda.is_available():
     import cupy as np  # type: ignore
 else:
     import numpy as np
+from torch_geometric.data import Data  # type: ignore
+from torch_geometric.typing import Tensor  # type: ignore
+from tqdm import tqdm
 
 from ModelEvaluator import ModelEvaluator
 
@@ -47,12 +47,20 @@ class PatchModelTrainer:
             self.graphs, self.y_compact, self.groups
         )
         evaluator = ModelEvaluator(NUM_FOLDS, open(f"{model_name}.metrics", "a"))
-        for train_idxs, validation_idxs in folds:
+        for train_idxs, validation_idxs in tqdm(folds, total=NUM_FOLDS):
             train_x = [
                 node_features for i in train_idxs for node_features in self.graphs[i].x
             ]
-            train_y_er = [self.graph_level_y[i][0] for i in train_idxs]
-            train_y_pr = [self.graph_level_y[i][1] for i in train_idxs]
+            train_y_er = [
+                self.graph_level_y[i][0]
+                for i in train_idxs
+                for feat in self.graphs[i].x
+            ]
+            train_y_pr = [
+                self.graph_level_y[i][1]
+                for i in train_idxs
+                for feat in self.graphs[i].x
+            ]
             t0 = time()
             er_model = make_er_model()
             er_model.fit(np.array(train_x), np.array(train_y_er))
@@ -60,12 +68,17 @@ class PatchModelTrainer:
             pr_model.fit(np.array(train_x), np.array(train_y_pr))
             t1 = time()
 
+            # The model predicts the negative class and the positive class (sums to 1), we are interested in the positive class
             y_pred_er: list[float] = [
-                np.mean(er_model.predict_proba(np.array(self.graphs[i].x)), axis=0)
+                np.mean(
+                    er_model.predict_proba(np.array(self.graphs[i].x))[:, 1], axis=0
+                )
                 for i in validation_idxs
             ]
             y_pred_pr: list[float] = [
-                np.mean(pr_model.predict_proba(np.array(self.graphs[i].x)), axis=0)
+                np.mean(
+                    pr_model.predict_proba(np.array(self.graphs[i].x))[:, 1], axis=0
+                )
                 for i in validation_idxs
             ]
             y_true: list[list[int]] = [self.graph_level_y[i] for i in validation_idxs]
