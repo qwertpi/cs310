@@ -5,6 +5,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -22,5 +23,6 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    # I.e. all the data in one batch
-    trainer.train_and_validate(Model, "linear", 1024, 200)
+    for decay in tqdm([1, 1e-1, 5e-2, 1e-2, 1e-3, 0]):
+        # I.e. all the data in one batch
+        trainer.train_and_validate(Model, f"linear_w{decay}", decay)
