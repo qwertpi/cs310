@@ -11,12 +11,11 @@ from PatchModelTrainer import PatchModelTrainer  # type: ignore
 
 
 @click.command()
-@click.argument("c", type=float)
 def train_model(c: float):
     model_func = partial(
         LogisticRegression,
         penalty="l2",
-        C=c,
+        C=1.0,
         class_weight="balanced",
         solver="newton-cholesky",
         max_iter=50000,
@@ -25,7 +24,7 @@ def train_model(c: float):
     PatchModelTrainer().train_and_validate(
         lambda: make_pipeline(model_func()),
         lambda: make_pipeline(model_func()),
-        f"logreg_c={c}",
+        f"logreg",
     )
 
 
