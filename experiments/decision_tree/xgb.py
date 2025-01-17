@@ -4,7 +4,7 @@ import sys
 sys.path.insert(0, "..")
 
 from sklearn.pipeline import make_pipeline  # type: ignore
-from tqdm import tqdm
+from tqdm.contrib.itertools import product
 from xgboost import XGBClassifier
 
 from PatchModelTrainer import PatchModelTrainer  # type: ignore
@@ -19,9 +19,8 @@ trainer = PatchModelTrainer()
 def train_model():
     er_class_imbalance = (NUM_EXAMPLES - NUM_POS["ER"]) / NUM_POS["ER"]
     pr_class_imbalance = (NUM_EXAMPLES - NUM_POS["PR"]) / NUM_POS["PR"]
-    for gamma in tqdm([0, 1, 10, 100]):
-        l1 = 0
-        l2 = 0
+    gamma = 0
+    for l1, l2 in product([0, 1, 10, 100, 1000], [0, 1, 10, 100, 1000]):
         model_func = partial(XGBClassifier, device="gpu", gamma=gamma, reg_alpha=l1, reg_lambda=l2)
         trainer.train_and_validate(
             lambda: make_pipeline(

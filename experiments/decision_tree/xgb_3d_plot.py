@@ -5,14 +5,11 @@ from matplotlib import pyplot as plt
 fig = plt.figure()
 for recepetor_num, recepetor in ((1, "ER"), (2, "PR")):
     paths = glob.glob("xgb_g*_l1*_l2*.metrics")
-    gammas = np.empty(len(paths), dtype=float)
     l1s = np.empty(len(paths), dtype=float)
     l2s = np.empty(len(paths), dtype=float)
     metrics = np.empty(len(paths), dtype=float)
     for i, path in enumerate(paths):
-        start, tail = path.split("_g")[1].split("_l1")
-        gammas[i] = np.log10(float(start)) if start != "0" else -1
-        start, tail = tail.split("_l2")
+        start, tail = path.split("_l1")[1].split("_l2")
         l1s[i] = np.log10(float(start)) if start != "0" else -1
         start, tail = tail.split(".metrics")
         l2s[i] = np.log10(float(start)) if start != "0" else -1
