@@ -23,6 +23,6 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for decay in tqdm([1, 1e-1, 5e-2, 1e-2, 1e-3, 0]):
+    for decay in tqdm([1e-4, 5e-4, 5e-3, 1e-3, 5e-3, 1e-3]):
         # I.e. all the data in one batch
         trainer.train_and_validate(Model, f"linear_w{decay}", decay)
