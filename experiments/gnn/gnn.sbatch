@@ -5,7 +5,7 @@
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
 #SBATCH --mem=8G
-#SBATCH --time=04:00:00
+#SBATCH --time=12:00:00
 #
 #SBATCH --mail-type=END,FAIL
 #SBATCH --output=slurm_%j.out
