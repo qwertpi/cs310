@@ -16,7 +16,7 @@ def plot(x_data: NDArray, receptor_num: int, plot_num: int):
     y = np.empty_like(x, dtype=float)
     for i, j in enumerate(idxs):
         y[i] = np.mean(metrics[np.where(x_data == x_data[j])])
-    axs.bar(x, y - y.min(), bottom=y.min(), width=1/4)
+    axs.bar(x, y - y.min(), bottom=y.min(), width=1 / 4)
 
 
 paths = glob.glob("linear_w*.metrics")
