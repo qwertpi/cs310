@@ -13,23 +13,23 @@ from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class GATBlock(torch.nn.Module):
-    def __init__(self, act: torch.nn.Module, num_heads: int, reg: torch.nn.Module):
+    def __init__(self, act: torch.nn.Module, num_heads: int):
         super().__init__()
         if not log(num_heads, 2).is_integer():
             raise ValueError
         self.att = torch_geometric.nn.GATConv(1024, 1024 // num_heads, num_heads)
-        self.reg = reg
+        self.bn = torch.nn.BatchNorm1d(1024)
         self.act = act
 
     def forward(self, x, edge_index):
-        return self.act(self.reg(self.att(x, edge_index)))
+        return self.act(self.bn(self.att(x, edge_index)))
 
 
 class Model(torch.nn.Module):
-    def __init__(self, num_blocks: int, num_heads: int, act: torch.nn.Module, reg: torch.nn.Module):
+    def __init__(self, num_blocks: int, num_heads: int, act: torch.nn.Module):
         super().__init__()
         self.blocks = torch.nn.ModuleList(
-            [GATBlock(act, num_heads, reg) for _ in range(num_blocks)]
+            [GATBlock(act, num_heads) for _ in range(num_blocks)]
         )
         self.readout = torch.nn.Linear(1024, 2)
 
@@ -43,9 +43,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for reg_num, reg in tqdm([(0, torch.nn.BatchNorm1d(1024)), (1, torch.nn.Dropout(0.1)), (2, torch.nn.Dropout(0.2)), (3, torch.nn.Dropout(0.5))]):
+    for heads in tqdm([1, 64, 128, 256, 512, 1024]):
         trainer.train_and_validate(
-            partial(Model, 2, 1, torch.nn.Identity(), reg),
-            f"gat_r{reg_num}",
+            partial(Model, 2, heads, torch.nn.Identity()),
+            f"gat_h{heads}",
             1e-2,
         )
