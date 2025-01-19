@@ -3,11 +3,9 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy.typing import NDArray
 
-paths = glob.glob("gat_h*_b*_w*.metrics")
 fig = plt.figure()
 
-
-NUM_PLOTS = 3
+NUM_PLOTS = 1
 
 
 def plot(x_data: NDArray, receptor_num: int, plot_num: int):
@@ -18,26 +16,16 @@ def plot(x_data: NDArray, receptor_num: int, plot_num: int):
     y = np.empty_like(x, dtype=float)
     for i, j in enumerate(idxs):
         y[i] = np.mean(metrics[np.where(x_data == x_data[j])])
-    axs.bar(x, y - y.min(), bottom=y.min())
+    axs.bar(x, y - y.min(), bottom=y.min(), width=1 / 4)
 
 
-for recepetor_num, receptor_paths in enumerate(
-    (
-        (path for path in paths if "_ER." in path),
-        (path for path in paths if "_PR." in path),
-    ),
-    start=1,
-):
-    widths = np.empty(len(paths) // 2, dtype=int)
-    depths = np.empty(len(paths) // 2, dtype=int)
-    decays = np.empty(len(paths) // 2, dtype=float)
-    metrics = np.empty(len(paths) // 2, dtype=float)
-    for i, path in enumerate(receptor_paths):
-        width, tail = path.split("_h")[1].split("_b")
-        depth, tail = tail.split("_w")
-        widths[i] = width
-        depths[i] = depth
-        decays[i] = tail.split("_")[0]
+paths = glob.glob("gat_r*.metrics")
+for receptor, recepetor_num in (("ER", 1), ("PR", 2)):
+    regs = np.empty(len(paths), dtype=int)
+    metrics = np.empty(len(paths), dtype=float)
+    for i, path in enumerate(paths):
+        start, tail = path.split("_r")[1].split(".metrics")
+        regs[i] = start
         with open(path, "r") as f:
             averages = False
             for line in f.read().splitlines():
@@ -48,11 +36,8 @@ for recepetor_num, receptor_paths in enumerate(
                     continue
 
                 split_line = line.split(": ")
-                if split_line[0] == "AUC_ROC":
+                if split_line[0] == f"AUC_ROC_{receptor}":
                     metrics[i] = float(split_line[1])
                     break
-
-    plot(np.log2(widths), recepetor_num, 1)
-    plot(depths, recepetor_num, 2)
-    plot(np.log10(decays), recepetor_num, 3)
+    plot(regs, recepetor_num, 1)
 plt.show()
