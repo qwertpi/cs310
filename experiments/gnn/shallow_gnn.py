@@ -6,7 +6,6 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from tqdm.contrib.itertools import product
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
@@ -27,10 +26,4 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for (act_num, act), decay in product(
-        [(0, torch.nn.Tanh()), (1, torch.nn.ReLU()), (2, torch.nn.Identity())],
-        [0, 1e-1, 1e-2, 1e-3],
-    ):
-        trainer.train_and_validate(
-            partial(Model, act=act), f"gnn_a{act_num}_w{decay}", decay
-        )
+    trainer.train_and_validate(partial(Model, act=torch.nn.Identity()), "gnn", 1e-3)
