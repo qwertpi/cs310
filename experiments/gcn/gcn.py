@@ -38,11 +38,8 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for act_num, act in tqdm(
-        [(0, torch.nn.Identity()), (1, torch.nn.ReLU()), (2, torch.nn.Tanh())]
-    ):
-        trainer.train_and_validate(
-            partial(Model, 2, act=act),
-            f"gcn_a{act_num}",
-            1e-2,
-        )
+    trainer.train_and_validate(
+        partial(Model, 2, act=torch.nn.Identity()),
+        f"gcn",
+        1e-2,
+    )
