@@ -75,6 +75,6 @@ if __name__ == "__main__":
     trainer = GNNModelTrainer()
     trainer.train_and_validate(
         partial(Model, 0, 3),
-        "econv_s0_m3",
+        "econv",
         1e-2,
     )
