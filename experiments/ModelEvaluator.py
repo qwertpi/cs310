@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
 
 if TYPE_CHECKING:
@@ -92,8 +93,51 @@ def roc_labels_agree(
     )
 
 
+def predicted_vs_true(
+    er_true: list[int],
+    er_predicted: list[float],
+    pr_true: list[int],
+    pr_predicted: list[float],
+    target: tuple[int, int],
+):
+    numerator = len(
+        [
+            1
+            for er, pr in zip(er_predicted, pr_predicted)
+            if (round(er), round(pr)) == target
+        ]
+    )
+    denominator = len([1 for er, pr in zip(er_true, pr_true) if (er, pr) == target])
+    # We don't want to divide by 0
+    denominator = 1 if denominator == 0 else denominator
+    return numerator / denominator
+
+
+def accuracy(
+    er_true: list[int],
+    er_predicted: list[float],
+    pr_true: list[int],
+    pr_predicted: list[float],
+    target: tuple[int, int],
+):
+    numerator = len(
+        [
+            1
+            for er_p, pr_p, er_t, pr_t in zip(
+                er_predicted, pr_predicted, er_true, pr_true
+            )
+            if (round(er_p), round(pr_p)) == (er_t, pr_t) and (er_t, pr_t) == target
+        ]
+    )
+    denominator = len([1 for er, pr in zip(er_true, pr_true) if (er, pr) == target])
+    # Vacously 100% accurate if there are no examples
+    if denominator == 0:
+        return 1
+    return numerator / denominator
+
+
 class ModelEvaluator:
-    PROBABILITY_METRICS: list[
+    METRICS: list[
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
     ] = [
         ("AUC_ROC_ER", fstify2a(typed_roc)),
@@ -101,8 +145,16 @@ class ModelEvaluator:
         ("AUC_ROC_PR", sndify2a(typed_roc)),
         ("AUC_PR_PR", sndify2a(typed_pr)),
         ("AUC_ROC_LABELSAGREE", roc_labels_agree),
+        ("PRED/TRUE(ER+PR+)", partial(predicted_vs_true, target=(1, 1))),
+        ("PRED/TRUE(ER+PR-)", partial(predicted_vs_true, target=(1, 0))),
+        ("PRED/TRUE(ER-PR+)", partial(predicted_vs_true, target=(0, 1))),
+        ("PRED/TRUE(ER-PR-)", partial(predicted_vs_true, target=(0, 0))),
+        ("ACC(ER+PR+)", partial(accuracy, target=(1, 1))),
+        ("ACC(ER+PR-)", partial(accuracy, target=(1, 0))),
+        ("ACC(ER-PR+)", partial(accuracy, target=(0, 1))),
+        ("ACC(ER-PR-)", partial(accuracy, target=(0, 0))),
     ]
-    CONDITIONED_PROBABILITY_METRICS: list[
+    CONDITIONED_METRICS: list[
         tuple[
             str,
             Callable[
@@ -134,7 +186,7 @@ class ModelEvaluator:
             condition_metric_wrapper(sndify2a(typed_roc), is_er_neg),
         ),
     ]
-    ALL_METRICS = PROBABILITY_METRICS + CONDITIONED_PROBABILITY_METRICS
+    ALL_METRICS = METRICS + CONDITIONED_METRICS
 
     def __init__(self, num_folds: int, file: TextIO):
         self.fold_num = 0
@@ -160,12 +212,12 @@ class ModelEvaluator:
         y_true_er = [t[0] for t in y_true]
         y_true_pr = [t[1] for t in y_true]
         metric_idx = 0
-        for _, p_metric_func in self.PROBABILITY_METRICS:
+        for _, p_metric_func in self.METRICS:
             self.scores[self.fold_num, metric_idx] = p_metric_func(
                 y_true_er, y_pred_er, y_true_pr, y_pred_pr
             )
             metric_idx += 1
-        for n, (_, cp_metric_func) in enumerate(self.CONDITIONED_PROBABILITY_METRICS):
+        for n, (_, cp_metric_func) in enumerate(self.CONDITIONED_METRICS):
             self.scores[self.fold_num, metric_idx] = cp_metric_func(
                 y_true, y_true_er, y_pred_er, y_true_pr, y_pred_pr
             )
@@ -176,6 +228,7 @@ class ModelEvaluator:
         ):
             self.file.write(f"{metric_name}: {metric_val}\n")
 
+        self.file.flush()
         self.fold_num += 1
 
     def close(self):
