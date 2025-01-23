@@ -32,14 +32,20 @@ class NodeFeatureDropout(torch.nn.Module):
             return x
         mean = x.mean(dim=0)
         std = x.std(dim=0)
-        mask = torch.nn.functional.dropout(torch.ones(x.size(0), device=x.device), p=self.p).bool()
+        mask = torch.nn.functional.dropout(
+            torch.ones(x.size(0), device=x.device), p=self.p
+        ).bool()
         num_dropped = mask.sum()
-        x[mask] = torch.normal(mean.expand(num_dropped, -1), std.expand(num_dropped, -1))
+        x[mask] = torch.normal(
+            mean.expand(num_dropped, -1), std.expand(num_dropped, -1)
+        )
         return x
 
 
 class AttentionAggregation(torch.nn.Module):
-    def __init__(self, in_channels: int, intermediate_channels: int, gated: bool = False):
+    def __init__(
+        self, in_channels: int, intermediate_channels: int, gated: bool = False
+    ):
         super().__init__()
         self.gated = gated
         self.gate = torch_geometric.nn.Linear(in_channels, intermediate_channels)
@@ -93,4 +99,3 @@ if __name__ == "__main__":
         "rnet",
         1e-2,
     )
-

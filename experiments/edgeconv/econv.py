@@ -65,10 +65,12 @@ class Model(torch.nn.Module):
         self.readout = torch.nn.Linear(2, 2)
 
     def forward(self, x, edge_index, batch):
-        acc = torch.stack(
-            [block(x, edge_index, batch) for block in self.blocks], dim=0
-        ).sum(dim=0)
-        return self.readout(acc)
+        block_outputs = []
+        h = x
+        for block in self.blocks:
+            h = block(h, edge_index, batch)
+            block_outputs.append(h)
+        return self.readout(torch.stack(block_outputs, dim=0).sum(dim=0))
 
 
 if __name__ == "__main__":

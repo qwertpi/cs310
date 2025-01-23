@@ -29,8 +29,9 @@ class Model(torch.nn.Module):
         self.readout = torch.nn.Linear(1024, 2)
 
     def forward(self, x, edge_index, batch):
+        h = x
         for block in self.blocks:
-            h = block(x, edge_index)
+            h = block(h, edge_index)
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         out = self.readout(h)
         return out
