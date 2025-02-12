@@ -19,13 +19,13 @@ def plot(x_data: NDArray, receptor_num: int, plot_num: int):
     axs.bar(x, y - y.min(), bottom=y.min(), width=1 / 4)
 
 
-paths = glob.glob("gat_h*.metrics")
+paths = glob.glob("gat_b*.metrics")
 for receptor, recepetor_num in (("ER", 1), ("PR", 2)):
-    heads = np.empty(len(paths), dtype=float)
+    blocks = np.empty(len(paths), dtype=float)
     metrics = np.empty(len(paths), dtype=float)
     for i, path in enumerate(paths):
-        start, tail = path.split("_h")[1].split(".metrics")
-        heads[i] = start
+        start, tail = path.split("_b")[1].split(".metrics")
+        blocks[i] = start
         with open(path, "r") as f:
             averages = False
             for line in f.read().splitlines():
@@ -39,5 +39,5 @@ for receptor, recepetor_num in (("ER", 1), ("PR", 2)):
                 if split_line[0] == f"AUC_ROC_{receptor}":
                     metrics[i] = float(split_line[1])
                     break
-    plot(np.log10(heads) / np.log10(4), recepetor_num, 1)
+    plot(blocks, recepetor_num, 1)
 plt.show()

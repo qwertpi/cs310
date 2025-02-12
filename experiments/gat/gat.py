@@ -44,9 +44,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for heads in tqdm([1, 4, 16, 64, 256, 1024]):
+    for blocks in tqdm([1, 2, 3, 4]):
         trainer.train_and_validate(
-            partial(Model, 2, heads, torch.nn.Identity()),
-            f"gat_h{heads}",
+            partial(Model, blocks, 256, torch.nn.Identity()),
+            f"gat_b{blocks}",
             1e-2,
         )
