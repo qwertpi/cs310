@@ -7,6 +7,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -43,8 +44,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(
-        partial(Model, 2, 1, torch.nn.Identity()),
-        "gat",
-        1e-2,
-    )
+    for heads in tqdm([1, 4, 16, 64, 256, 1024]):
+        trainer.train_and_validate(
+            partial(Model, 2, heads, torch.nn.Identity()),
+            f"gat_h{heads}",
+            1e-2,
+        )
