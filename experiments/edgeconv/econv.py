@@ -81,5 +81,4 @@ if __name__ == "__main__":
     trainer.train_and_validate(
         partial(Model, 1, 3),
         "econv",
-        1e-2,
     )

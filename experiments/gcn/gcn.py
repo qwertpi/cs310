@@ -6,7 +6,6 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -42,5 +41,4 @@ if __name__ == "__main__":
     trainer.train_and_validate(
         partial(Model, 2, act=torch.nn.Identity()),
         "gcn",
-        1e-2,
     )

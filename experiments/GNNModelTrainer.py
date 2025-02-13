@@ -106,7 +106,40 @@ class LightningModel(LightningModule):
         self.log("val_loss", loss, batch_size=len(batch), on_epoch=True, on_step=False)
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), weight_decay=self.weight_decay)
+        # PyTorch's default weight decay decays parameters that should not be regularised
+        # This code based on: https://discuss.pytorch.org/t/weight-decay-in-the-optimizers-is-a-bad-idea-especially-with-batchnorm/16994/14
+        decay_params: list[torch.nn.Parameter] = []
+        no_decay_params: list[torch.nn.Parameter] = []
+
+        for module in self.modules():
+            if isinstance(
+                module,
+                (
+                    torch.nn.BatchNorm1d,
+                    torch.nn.BatchNorm2d,
+                    torch.nn.BatchNorm3d,
+                    torch.nn.PReLU,
+                ),
+            ):
+                no_decay_params.extend(module.parameters(recurse=False))
+            else:
+                for name, param in module.named_parameters(recurse=False):
+                    if "bias" in name:
+                        no_decay_params.append(param)
+                    else:
+                        decay_params.append(param)
+
+        if sum((p.numel() for p in no_decay_params)) + sum(
+            (p.numel() for p in decay_params)
+        ) != sum((p.numel() for p in self.parameters(recurse=True))):
+            raise RuntimeError("Lost or gained paramaters")
+
+        return torch.optim.AdamW(
+            (
+                {"params": decay_params, "weight_decay": self.weight_decay},
+                {"params": no_decay_params, "weight_decay": 0},
+            )
+        )
 
 
 class GNNModelTrainer:
@@ -135,7 +168,7 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
-        weight_decay: float,
+        weight_decay: float = 1e-2,  # AdamW's default value
     ):
         NUM_FOLDS = 5
         # Delete the file if it already exists
