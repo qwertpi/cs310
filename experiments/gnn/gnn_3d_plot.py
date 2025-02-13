@@ -4,15 +4,15 @@ from matplotlib import pyplot as plt
 
 fig = plt.figure()
 for recepetor_num, recepetor in ((1, "ER"), (2, "PR")):
-    paths = glob.glob("gnn_a*_w*.metrics")
+    paths = glob.glob("gnn_a*_d*.metrics")
     activations = np.empty(len(paths), dtype=int)
     decays = np.empty(len(paths), dtype=float)
     metrics = np.empty(len(paths), dtype=float)
     for i, path in enumerate(paths):
-        start, tail = path.split("_a")[1].split("_w")
+        start, tail = path.split("_a")[1].split("_d")
         activations[i] = start
         start, tail = tail.split(".metrics")
-        decays[i] = np.log10(float(start)) if start != "0" else 0
+        decays[i] = start
         with open(path, "r") as f:
             averages = False
             for line in f.read().splitlines():
@@ -27,6 +27,7 @@ for recepetor_num, recepetor in ((1, "ER"), (2, "PR")):
                     metrics[i] = float(split_line[1])
                     break
 
+    decays = np.log10(decays)
     x, y = np.meshgrid(np.unique(activations), np.unique(decays))
     z = np.full_like(x, np.nan, dtype=float)
     for activation, decay, metric in zip(activations, decays, metrics):
