@@ -12,13 +12,14 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import CSVLogger
+from sklearn.metrics import roc_auc_score  # type: ignore
 from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 import torch
 
 from torch_geometric.data import Data  # type: ignore
 import torch_geometric.loader  # type: ignore
 
-from ModelEvaluator import ModelEvaluator
+from ModelEvaluator import ModelEvaluator, float_wrapper
 
 torch.set_float32_matmul_precision("medium")
 
@@ -54,18 +55,114 @@ class LightningModel(LightningModule):
         return self.model(*args, **kwargs)
 
     def compute_losses(self, batch):
-        global er_pos_weight, pr_pos_weight
         out = self.model(batch.x, batch.edge_index, batch.batch)
         er_labels = batch.y[:, 0]
-        batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            out[:, 0],
-            er_labels,
-            pos_weight=self.er_pos_weight,
-        )
         pr_labels = batch.y[:, 1]
-        batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            out[:, 1], pr_labels, pos_weight=self.pr_pos_weight
+        er_pred = out[:, 0]
+        pr_pred = out[:, 1]
+
+        er_labels_given_pr_pos = er_labels[pr_labels == 1]
+        er_labels_given_pr_neg = er_labels[pr_labels == 0]
+        pr_labels_given_er_pos = pr_labels[er_labels == 1]
+        pr_labels_given_er_neg = pr_labels[er_labels == 0]
+        er_pred_given_pr_pos = er_pred[pr_labels == 1]
+        er_pred_given_pr_neg = er_pred[pr_labels == 0]
+        pr_pred_given_er_pos = pr_pred[er_labels == 1]
+        pr_pred_given_er_neg = pr_pred[er_labels == 0]
+
+        if (
+            len(set(er_labels_given_pr_pos.tolist())) < 2
+            or len(set(er_labels_given_pr_neg.tolist())) < 2
+        ):
+            auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
+        else:
+            auc_roc_er_given_pr_pos = float_wrapper(roc_auc_score)(
+                er_labels_given_pr_pos.cpu().detach(),
+                er_pred_given_pr_pos.cpu().detach(),
+            )
+            auc_roc_er_given_pr_neg = float_wrapper(roc_auc_score)(
+                er_labels_given_pr_neg.cpu().detach(),
+                er_pred_given_pr_neg.cpu().detach(),
+            )
+
+        if (
+            len(set(pr_labels_given_er_pos.tolist())) < 2
+            or len(set(pr_labels_given_er_neg.tolist())) < 2
+        ):
+            auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
+        else:
+            auc_roc_pr_given_er_pos = float_wrapper(roc_auc_score)(
+                pr_labels_given_er_pos.cpu().detach(),
+                pr_pred_given_er_pos.cpu().detach(),
+            )
+            auc_roc_pr_given_er_neg = float_wrapper(roc_auc_score)(
+                pr_labels_given_er_neg.cpu().detach(),
+                pr_pred_given_er_neg.cpu().detach(),
+            )
+
+        batch_er_loss_given_pr_pos = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                er_pred_given_pr_pos,
+                er_labels_given_pr_pos,
+                pos_weight=self.er_pos_weight,
+            )
         )
+        batch_er_loss_given_pr_neg = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                er_pred_given_pr_neg,
+                er_labels_given_pr_neg,
+                pos_weight=self.er_pos_weight,
+            )
+        )
+
+        batch_pr_loss_given_er_pos = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                pr_pred_given_er_pos,
+                pr_labels_given_er_pos,
+                pos_weight=self.pr_pos_weight,
+            )
+        )
+        batch_pr_loss_given_er_neg = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                pr_pred_given_er_neg,
+                pr_labels_given_er_neg,
+                pos_weight=self.pr_pos_weight,
+            )
+        )
+
+        # The sum of the multipliers for two partitions is 2 (e.g. 1 each)
+        # Split between them according to ratio of their auc_roc
+        # The bigger multiplier is assigned to the one with the smaller auc_roc
+        er_given_pr_pos_multiplier = (
+            2
+            * auc_roc_er_given_pr_neg
+            / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
+        )
+        er_given_pr_neg_multipler = (
+            2
+            * auc_roc_er_given_pr_pos
+            / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
+        )
+        batch_er_loss = (
+            er_given_pr_pos_multiplier * batch_er_loss_given_pr_pos
+            + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg
+        )
+
+        pr_given_er_pos_multiplier = (
+            2
+            * auc_roc_pr_given_er_neg
+            / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
+        )
+        pr_given_er_neg_multipler = (
+            2
+            * auc_roc_pr_given_er_pos
+            / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
+        )
+        batch_pr_loss = (
+            pr_given_er_pos_multiplier * batch_pr_loss_given_er_pos
+            + pr_given_er_neg_multipler * batch_pr_loss_given_er_neg
+        )
+
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
 
@@ -170,6 +267,7 @@ class GNNModelTrainer:
         model_name: str,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
+        model_name = model_name + "_smartloss"
         NUM_FOLDS = 5
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
