@@ -13,20 +13,17 @@ from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class Model(torch.nn.Module):
-    def __init__(self, act: torch.nn.Module):
+    def __init__(self):
         super().__init__()
         self.lin = torch_geometric.nn.Linear(1024, 2)
-        self.act = act
 
     def forward(self, x, edge_index, batch):
-        h = self.act(self.lin(x))
+        h = self.lin(x)
         out = torch_geometric.nn.pool.global_mean_pool(h, batch)
         return out
 
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for i, act in tqdm(
-        [(1, torch.nn.Identity()), (2, torch.nn.PReLU())]
-    ):
-        trainer.train_and_validate(partial(Model, act), f"linear_a{i}")
+    for decay in tqdm([5e-4, 1e-3, 5e-3, 1e-2, 5e-2]):
+        trainer.train_and_validate(Model, f"linear_w{decay}", decay)
