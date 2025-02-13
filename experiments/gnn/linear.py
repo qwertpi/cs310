@@ -1,4 +1,3 @@
-from functools import partial
 import sys
 
 sys.path.insert(0, "..")
