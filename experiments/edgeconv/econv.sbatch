@@ -2,11 +2,10 @@
 #
 #SBATCH --ntasks=1
 #SBATCH --job-name=econv
-# eagle has less vram
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
 #SBATCH --mem=7G
-#SBATCH --time=10:00:00
+#SBATCH --time=24:00:00
 #
 #SBATCH --mail-type=END,FAIL
 #SBATCH --output=slurm_%j.out

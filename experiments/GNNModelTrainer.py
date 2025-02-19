@@ -42,10 +42,16 @@ class LightningModel(LightningModule):
         self,
         torch_model: torch.nn.Module,
         weight_decay: float,
+        broad_oversample: bool,
+        precise_oversample: bool,
+        scale_loss: bool,
     ):
         super().__init__()
         self.model = torch_model
         self.weight_decay = weight_decay
+        self.broad_oversample = broad_oversample
+        self.precise_oversample = precise_oversample
+        self.scale_loss = scale_loss
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -68,18 +74,30 @@ class LightningModel(LightningModule):
         pr_pred_given_er_neg = pr_pred[er_labels == 0]
 
         # Amount of oversampling in the BCE losses so positive and negative examples count equally
-        er_given_pr_pos_weight = (er_labels_given_pr_pos == 0).sum() / (
-            er_labels_given_pr_pos == 1
-        ).sum()
-        er_given_pr_neg_weight = (er_labels_given_pr_neg == 0).sum() / (
-            er_labels_given_pr_neg == 1
-        ).sum()
-        pr_given_er_pos_weight = (pr_labels_given_er_pos == 0).sum() / (
-            pr_labels_given_er_pos == 1
-        ).sum()
-        pr_given_er_neg_weight = (pr_labels_given_er_neg == 0).sum() / (
-            pr_labels_given_er_neg == 1
-        ).sum()
+        # Default values
+        er_given_pr_pos_weight = er_given_pr_neg_weight = er_given_pr_neg_weight = (
+            pr_given_er_pos_weight
+        ) = pr_given_er_neg_weight = torch.tensor(1)
+        if self.broad_oversample:
+            er_given_pr_pos_weight = er_given_pr_neg_weight = (
+                er_labels == 0
+            ).sum() / torch.max(torch.tensor(1), (er_labels == 1).sum())
+            pr_given_er_pos_weight = pr_given_er_neg_weight = (
+                pr_labels == 0
+            ).sum() / torch.max(torch.tensor(1), (pr_labels == 1).sum())
+        if self.precise_oversample:
+            er_given_pr_pos_weight = (er_labels_given_pr_pos == 0).sum() / torch.max(
+                torch.tensor(1), (er_labels_given_pr_pos == 1).sum()
+            )
+            er_given_pr_neg_weight = (er_labels_given_pr_neg == 0).sum() / torch.max(
+                torch.tensor(1), (er_labels_given_pr_neg == 1).sum()
+            )
+            pr_given_er_pos_weight = (pr_labels_given_er_pos == 0).sum() / torch.max(
+                torch.tensor(1), (pr_labels_given_er_pos == 1).sum()
+            )
+            pr_given_er_neg_weight = (pr_labels_given_er_neg == 0).sum() / torch.max(
+                torch.tensor(1), (pr_labels_given_er_neg == 1).sum()
+            )
 
         batch_er_loss_given_pr_pos = (
             torch.nn.functional.binary_cross_entropy_with_logits(
@@ -111,70 +129,75 @@ class LightningModel(LightningModule):
             )
         )
 
-        # Amount of scaling of BCE losses to boost relative effect of difficult partitions
-        if (
-            len(set(er_labels_given_pr_pos.tolist())) < 2
-            or len(set(er_labels_given_pr_neg.tolist())) < 2
-        ):
-            auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
-        else:
-            auc_roc_er_given_pr_pos = float_wrapper(roc_auc_score)(
-                er_labels_given_pr_pos.cpu().detach(),
-                er_pred_given_pr_pos.cpu().detach(),
-            )
-            auc_roc_er_given_pr_neg = float_wrapper(roc_auc_score)(
-                er_labels_given_pr_neg.cpu().detach(),
-                er_pred_given_pr_neg.cpu().detach(),
-            )
-        # Avoid possible divide by zero error in subsequent code
-        if auc_roc_er_given_pr_pos == auc_roc_er_given_pr_neg == 0:
-            auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
+        # # Amount of scaling of BCE losses to boost relative effect of difficult partitions
+        if self.scale_loss:
+            if (
+                len(set(er_labels_given_pr_pos.tolist())) < 2
+                or len(set(er_labels_given_pr_neg.tolist())) < 2
+            ):
+                auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
+            else:
+                auc_roc_er_given_pr_pos = float_wrapper(roc_auc_score)(
+                    er_labels_given_pr_pos.cpu().detach(),
+                    er_pred_given_pr_pos.cpu().detach(),
+                )
+                auc_roc_er_given_pr_neg = float_wrapper(roc_auc_score)(
+                    er_labels_given_pr_neg.cpu().detach(),
+                    er_pred_given_pr_neg.cpu().detach(),
+                )
+            # Avoid possible divide by zero error in subsequent code
+            if auc_roc_er_given_pr_pos == 0 or auc_roc_er_given_pr_neg == 0:
+                auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
 
-        if (
-            len(set(pr_labels_given_er_pos.tolist())) < 2
-            or len(set(pr_labels_given_er_neg.tolist())) < 2
-        ):
-            auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
+            if (
+                len(set(pr_labels_given_er_pos.tolist())) < 2
+                or len(set(pr_labels_given_er_neg.tolist())) < 2
+            ):
+                auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
+            else:
+                auc_roc_pr_given_er_pos = float_wrapper(roc_auc_score)(
+                    pr_labels_given_er_pos.cpu().detach(),
+                    pr_pred_given_er_pos.cpu().detach(),
+                )
+                auc_roc_pr_given_er_neg = float_wrapper(roc_auc_score)(
+                    pr_labels_given_er_neg.cpu().detach(),
+                    pr_pred_given_er_neg.cpu().detach(),
+                )
+            # Avoid possible divide by zero error in subsequent code
+            if auc_roc_pr_given_er_pos == 0 or auc_roc_pr_given_er_neg == 0:
+                auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
         else:
-            auc_roc_pr_given_er_pos = float_wrapper(roc_auc_score)(
-                pr_labels_given_er_pos.cpu().detach(),
-                pr_pred_given_er_pos.cpu().detach(),
-            )
-            auc_roc_pr_given_er_neg = float_wrapper(roc_auc_score)(
-                pr_labels_given_er_neg.cpu().detach(),
-                pr_pred_given_er_neg.cpu().detach(),
-            )
-        # Avoid possible divide by zero error in subsequent code
-        if auc_roc_pr_given_er_pos == auc_roc_pr_given_er_neg == 0:
-            auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
+            auc_roc_er_given_pr_neg = auc_roc_er_given_pr_pos = (
+                auc_roc_pr_given_er_neg
+            ) = auc_roc_pr_given_er_pos = 1
 
-        er_pos_prevalance = (er_labels == 1).sum() / len(er_labels)
+        # We need to rescale our terms to match their contribution if we did one big call to bce
+        pr_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
         # The sum of the multipliers for two partitions is 2 (e.g. 1 each)
         # Split between them according to ratio of their auc_roc
         # The bigger multiplier is assigned to the one with the smaller auc_roc
-        er_given_pr_pos_multiplier = er_pos_prevalance * (
+        er_given_pr_pos_multiplier = pr_pos_prevalance * (
             2
             * auc_roc_er_given_pr_neg
             / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
         )
-        er_given_pr_neg_multipler = (1 - er_pos_prevalance) * (
+        er_given_pr_neg_multipler = (1 - pr_pos_prevalance) * (
             2
             * auc_roc_er_given_pr_pos
             / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
         )
-        er_given_pr_pos_multiplier = er_given_pr_neg_multipler = 1
         batch_er_loss = (
             er_given_pr_pos_multiplier * batch_er_loss_given_pr_pos.nan_to_num(0)
             + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg.nan_to_num(0)
         )
 
-        pr_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
-        pr_given_er_pos_multiplier = pr_pos_prevalance * (
+        er_pos_prevalance = (er_labels == 1).sum() / len(er_labels)
+        pr_given_er_pos_multiplier = er_pos_prevalance * (
             2
             * auc_roc_pr_given_er_neg
             / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
         )
-        pr_given_er_neg_multipler = (1 - pr_pos_prevalance) * (
+        pr_given_er_neg_multipler = (1 - er_pos_prevalance) * (
             2
             * auc_roc_pr_given_er_pos
             / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
@@ -277,9 +300,14 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
+        broad_oversample: bool,
+        precise_oversample: bool,
+        scale_loss: bool,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
-        model_name = model_name + "_smartloss"
+        model_name = (
+            model_name + f"_{broad_oversample}_{precise_oversample}_{scale_loss}"
+        )
         NUM_FOLDS = 5
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
@@ -290,7 +318,13 @@ class GNNModelTrainer:
         )
         batch_size = 1024
         for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
-            model = LightningModel(make_model(), weight_decay)
+            model = LightningModel(
+                make_model(),
+                weight_decay,
+                broad_oversample,
+                precise_oversample,
+                scale_loss,
+            )
             early_stopping = EarlyStopping(monitor="val_loss", patience=50)
 
             t0 = t1 = checkpoint = validation_loader = None

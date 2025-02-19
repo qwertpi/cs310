@@ -10,6 +10,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
@@ -78,7 +79,14 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(
-        partial(Model, 1, 3),
-        "econv",
-    )
+    for bos, pos, sl in tqdm(
+        [
+            (False, False, False),
+            (True, False, False),
+            (False, True, False),
+            (False, False, True),
+            (True, False, True),
+            (False, True, True),
+        ]
+    ):
+        trainer.train_and_validate(partial(Model, 1, 3), "econv", bos, pos, sl)
