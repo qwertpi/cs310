@@ -41,23 +41,19 @@ class LightningModel(LightningModule):
     def __init__(
         self,
         torch_model: torch.nn.Module,
-        er_pos_weight: torch.Tensor,
-        pr_pos_weight: torch.Tensor,
         weight_decay: float,
     ):
         super().__init__()
         self.model = torch_model
-        self.er_pos_weight = er_pos_weight
-        self.pr_pos_weight = pr_pos_weight
         self.weight_decay = weight_decay
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
     def compute_losses(self, batch):
-        out = self.model(batch.x, batch.edge_index, batch.batch)
         er_labels = batch.y[:, 0]
         pr_labels = batch.y[:, 1]
+        out = self.model(batch.x, batch.edge_index, batch.batch)
         er_pred = out[:, 0]
         pr_pred = out[:, 1]
 
@@ -65,11 +61,57 @@ class LightningModel(LightningModule):
         er_labels_given_pr_neg = er_labels[pr_labels == 0]
         pr_labels_given_er_pos = pr_labels[er_labels == 1]
         pr_labels_given_er_neg = pr_labels[er_labels == 0]
+
         er_pred_given_pr_pos = er_pred[pr_labels == 1]
         er_pred_given_pr_neg = er_pred[pr_labels == 0]
         pr_pred_given_er_pos = pr_pred[er_labels == 1]
         pr_pred_given_er_neg = pr_pred[er_labels == 0]
 
+        # Amount of oversampling in the BCE losses so positive and negative examples count equally
+        er_given_pr_pos_weight = (er_labels_given_pr_pos == 0).sum() / (
+            er_labels_given_pr_pos == 1
+        ).sum()
+        er_given_pr_neg_weight = (er_labels_given_pr_neg == 0).sum() / (
+            er_labels_given_pr_neg == 1
+        ).sum()
+        pr_given_er_pos_weight = (pr_labels_given_er_pos == 0).sum() / (
+            pr_labels_given_er_pos == 1
+        ).sum()
+        pr_given_er_neg_weight = (pr_labels_given_er_neg == 0).sum() / (
+            pr_labels_given_er_neg == 1
+        ).sum()
+
+        batch_er_loss_given_pr_pos = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                er_pred_given_pr_pos,
+                er_labels_given_pr_pos,
+                pos_weight=er_given_pr_pos_weight,
+            )
+        )
+        batch_er_loss_given_pr_neg = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                er_pred_given_pr_neg,
+                er_labels_given_pr_neg,
+                pos_weight=er_given_pr_neg_weight,
+            )
+        )
+
+        batch_pr_loss_given_er_pos = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                pr_pred_given_er_pos,
+                pr_labels_given_er_pos,
+                pos_weight=pr_given_er_pos_weight,
+            )
+        )
+        batch_pr_loss_given_er_neg = (
+            torch.nn.functional.binary_cross_entropy_with_logits(
+                pr_pred_given_er_neg,
+                pr_labels_given_er_neg,
+                pos_weight=pr_given_er_neg_weight,
+            )
+        )
+
+        # Amount of scaling of BCE losses to boost relative effect of difficult partitions
         if (
             len(set(er_labels_given_pr_pos.tolist())) < 2
             or len(set(er_labels_given_pr_neg.tolist())) < 2
@@ -84,6 +126,9 @@ class LightningModel(LightningModule):
                 er_labels_given_pr_neg.cpu().detach(),
                 er_pred_given_pr_neg.cpu().detach(),
             )
+        # Avoid possible divide by zero error in subsequent code
+        if auc_roc_er_given_pr_pos == auc_roc_er_given_pr_neg == 0:
+            auc_roc_er_given_pr_pos = auc_roc_er_given_pr_neg = 1
 
         if (
             len(set(pr_labels_given_er_pos.tolist())) < 2
@@ -99,68 +144,44 @@ class LightningModel(LightningModule):
                 pr_labels_given_er_neg.cpu().detach(),
                 pr_pred_given_er_neg.cpu().detach(),
             )
+        # Avoid possible divide by zero error in subsequent code
+        if auc_roc_pr_given_er_pos == auc_roc_pr_given_er_neg == 0:
+            auc_roc_pr_given_er_pos = auc_roc_pr_given_er_neg = 1
 
-        batch_er_loss_given_pr_pos = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                er_pred_given_pr_pos,
-                er_labels_given_pr_pos,
-                pos_weight=self.er_pos_weight,
-            )
-        )
-        batch_er_loss_given_pr_neg = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                er_pred_given_pr_neg,
-                er_labels_given_pr_neg,
-                pos_weight=self.er_pos_weight,
-            )
-        )
-
-        batch_pr_loss_given_er_pos = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                pr_pred_given_er_pos,
-                pr_labels_given_er_pos,
-                pos_weight=self.pr_pos_weight,
-            )
-        )
-        batch_pr_loss_given_er_neg = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                pr_pred_given_er_neg,
-                pr_labels_given_er_neg,
-                pos_weight=self.pr_pos_weight,
-            )
-        )
-
+        er_pos_prevalance = (er_labels == 1).sum() / len(er_labels)
         # The sum of the multipliers for two partitions is 2 (e.g. 1 each)
         # Split between them according to ratio of their auc_roc
         # The bigger multiplier is assigned to the one with the smaller auc_roc
-        er_given_pr_pos_multiplier = (
+        er_given_pr_pos_multiplier = er_pos_prevalance * (
             2
             * auc_roc_er_given_pr_neg
             / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
         )
-        er_given_pr_neg_multipler = (
+        er_given_pr_neg_multipler = (1 - er_pos_prevalance) * (
             2
             * auc_roc_er_given_pr_pos
             / (auc_roc_er_given_pr_pos + auc_roc_er_given_pr_neg)
         )
+        er_given_pr_pos_multiplier = er_given_pr_neg_multipler = 1
         batch_er_loss = (
-            er_given_pr_pos_multiplier * batch_er_loss_given_pr_pos
-            + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg
+            er_given_pr_pos_multiplier * batch_er_loss_given_pr_pos.nan_to_num(0)
+            + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg.nan_to_num(0)
         )
 
-        pr_given_er_pos_multiplier = (
+        pr_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
+        pr_given_er_pos_multiplier = pr_pos_prevalance * (
             2
             * auc_roc_pr_given_er_neg
             / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
         )
-        pr_given_er_neg_multipler = (
+        pr_given_er_neg_multipler = (1 - pr_pos_prevalance) * (
             2
             * auc_roc_pr_given_er_pos
             / (auc_roc_pr_given_er_pos + auc_roc_pr_given_er_neg)
         )
         batch_pr_loss = (
-            pr_given_er_pos_multiplier * batch_pr_loss_given_er_pos
-            + pr_given_er_neg_multipler * batch_pr_loss_given_er_neg
+            pr_given_er_pos_multiplier * batch_pr_loss_given_er_pos.nan_to_num(0)
+            + pr_given_er_neg_multipler * batch_pr_loss_given_er_neg.nan_to_num(0)
         )
 
         loss = batch_er_loss + batch_pr_loss
@@ -252,15 +273,6 @@ class GNNModelTrainer:
             self.y.append(graph_label)
             self.groups.append(group)
 
-        self.er_pos_weight = torch.tensor(
-            sum((labels[0] == 0 for labels in self.y))
-            / sum((labels[0] == 1 for labels in self.y))
-        )
-        self.pr_pos_weight = torch.tensor(
-            sum((labels[1] == 0 for labels in self.y))
-            / sum((labels[1] == 1 for labels in self.y))
-        )
-
     def train_and_validate(
         self,
         make_model: Callable[[], torch.nn.Module],
@@ -278,9 +290,7 @@ class GNNModelTrainer:
         )
         batch_size = 1024
         for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
-            model = LightningModel(
-                make_model(), self.er_pos_weight, self.pr_pos_weight, weight_decay
-            )
+            model = LightningModel(make_model(), weight_decay)
             early_stopping = EarlyStopping(monitor="val_loss", patience=50)
 
             t0 = t1 = checkpoint = validation_loader = None
