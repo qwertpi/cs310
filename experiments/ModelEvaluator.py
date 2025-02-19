@@ -104,15 +104,6 @@ def erpr_confusion_matrix(
     )
 
 
-def single_receptor_confusion_matrix(true: list[int], pred: list[float]):
-    return confusion_matrix(
-        [int(t) for t in true],
-        [round(p) for p in pred],
-        labels=[0, 1],
-        normalize="true",
-    )
-
-
 class ModelEvaluator:
     METRICS: list[
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
@@ -158,18 +149,11 @@ class ModelEvaluator:
     ALL_METRICS = METRICS + CONDITIONED_METRICS
 
     DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC = ("Confusion_ERPR", erpr_confusion_matrix)
-    SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS = [
-        ("Confusion_ER", fstify2a(single_receptor_confusion_matrix)),
-        ("Confusion_PR", sndify2a(single_receptor_confusion_matrix)),
-    ]
 
     def __init__(self, num_folds: int, file: TextIO):
         self.fold_num = 0
         self.scores = np.empty((num_folds, len(self.ALL_METRICS)))
-        self.single_receptor_confusion_matrices = np.empty(
-            (num_folds, len(self.SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS), 2, 2)
-        )
-        self.double_receptor_confusion_matrices = np.empty((num_folds, 1, 4, 4))
+        self.double_receptor_confusion_matrices = np.empty((num_folds, 4, 4))
         self.train_times = np.empty((num_folds))
         self.epochs = np.empty((num_folds))
         self.file = file
@@ -202,77 +186,48 @@ class ModelEvaluator:
             )
             metric_idx += 1
 
-        self.double_receptor_confusion_matrices[self.fold_num, 0] = (
+        self.double_receptor_confusion_matrices[self.fold_num] = (
             self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[
                 1
             ](y_true_er, y_pred_er, y_true_pr, y_pred_pr)
         )
-        for i, (_, matrix_func) in enumerate(
-            self.SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS
-        ):
-            self.single_receptor_confusion_matrices[self.fold_num, i] = matrix_func(
-                y_true_er, y_pred_er, y_true_pr, y_pred_pr
-            )
 
         for (metric_name, _), metric_val in zip(
             self.ALL_METRICS, self.scores[self.fold_num]
         ):
             self.file.write(f"{metric_name}: {metric_val}\n")
 
-        for (matrix_name, _), matrix in zip(
-            self.SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS,
-            self.single_receptor_confusion_matrices[self.fold_num],
-        ):
-            self.file.write(f"{matrix_name}: {matrix}\n")
-        for matrix in self.double_receptor_confusion_matrices[self.fold_num]:
-            self.file.write(
-                f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {matrix}\n"
-            )
+        self.file.write(
+            f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {self.double_receptor_confusion_matrices[self.fold_num]}\n"
+        )
 
         self.file.flush()
         self.fold_num += 1
 
     def close(self):
         metric_means = np.nanmean(self.scores, axis=0)
-        single_receptor_matrix_means = np.mean(
-            self.single_receptor_confusion_matrices, axis=0
-        )
-        double_receptor_matrix_means = np.mean(
+        double_receptor_matrix_mean = np.mean(
             self.double_receptor_confusion_matrices, axis=0
         )
         metric_std_devs = np.nanstd(self.scores, axis=0)
-        single_receptor_matrix_std_devs = np.std(
-            self.single_receptor_confusion_matrices, axis=0
-        )
-        double_receptor_matrix_std_devs = np.std(
+        double_receptor_matrix_std_dev = np.std(
             self.double_receptor_confusion_matrices, axis=0
         )
         self.file.write("MEAN\n")
         for (metric_name, _), mean in zip(self.ALL_METRICS, metric_means):
             self.file.write(f"{metric_name}: {mean}\n")
-        for (matrix_name, _), mean in zip(
-            self.SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS, single_receptor_matrix_means
-        ):
-            self.file.write(f"{matrix_name}: {mean}\n")
-        for mean in double_receptor_matrix_means:
-            self.file.write(
-                f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {mean}\n"
-            )
+        self.file.write(
+            f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {double_receptor_matrix_mean}\n"
+        )
         self.file.write(f"Train time: {np.mean(self.train_times)}\n")
         self.file.write(f"Epochs: {np.mean(self.epochs)}\n")
 
         self.file.write("STD_DEV\n")
         for (metric_name, _), stddev in zip(self.ALL_METRICS, metric_std_devs):
             self.file.write(f"{metric_name}: {stddev}\n")
-        for (matrix_name, _), stddev in zip(
-            self.SINGLE_RECEPETOR_CONFUSION_MATRICES_FUNCS,
-            single_receptor_matrix_std_devs,
-        ):
-            self.file.write(f"{matrix_name}: {stddev}\n")
-        for stddev in double_receptor_matrix_std_devs:
-            self.file.write(
-                f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {stddev}\n"
-            )
+        self.file.write(
+            f"{self.DOUBLE_RECEPTOR_CONFUSION_MATRIX_FUNC[0]}: {double_receptor_matrix_std_dev}\n"
+        )
         self.file.write(f"Train time: {np.std(self.train_times)}\n")
         self.file.write(f"Epochs: {np.std(self.epochs)}\n")
         self.file.close()
