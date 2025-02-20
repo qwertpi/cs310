@@ -74,43 +74,28 @@ class LightningModel(LightningModule):
         pr_pred_given_er_neg = pr_pred[er_labels == 0]
 
         # Amount of oversampling in the BCE losses so positive and negative examples count equally
-        # Default values
-        er_given_pr_pos_weight = er_given_pr_neg_weight = er_given_pr_neg_weight = (
-            pr_given_er_pos_weight
-        ) = pr_given_er_neg_weight = torch.tensor(1)
-        if self.broad_oversample:
-            er_given_pr_pos_weight = er_given_pr_neg_weight = (
-                er_labels == 0
-            ).sum() / torch.max(torch.tensor(1), (er_labels == 1).sum())
-            pr_given_er_pos_weight = pr_given_er_neg_weight = (
-                pr_labels == 0
-            ).sum() / torch.max(torch.tensor(1), (pr_labels == 1).sum())
-        if self.precise_oversample:
-            er_given_pr_pos_weight = (er_labels_given_pr_pos == 0).sum() / torch.max(
-                torch.tensor(1), (er_labels_given_pr_pos == 1).sum()
+        if self.broad_oversample or self.precise_oversample:
+            er_pos_weight = (er_labels == 0).sum() / torch.max(
+                torch.tensor(1), (er_labels == 1).sum()
             )
-            er_given_pr_neg_weight = (er_labels_given_pr_neg == 0).sum() / torch.max(
-                torch.tensor(1), (er_labels_given_pr_neg == 1).sum()
+            pr_pos_weight = (pr_labels == 0).sum() / torch.max(
+                torch.tensor(1), (pr_labels == 1).sum()
             )
-            pr_given_er_pos_weight = (pr_labels_given_er_pos == 0).sum() / torch.max(
-                torch.tensor(1), (pr_labels_given_er_pos == 1).sum()
-            )
-            pr_given_er_neg_weight = (pr_labels_given_er_neg == 0).sum() / torch.max(
-                torch.tensor(1), (pr_labels_given_er_neg == 1).sum()
-            )
+        else:
+            er_pos_weight = pr_pos_weight = torch.tensor(1)
 
         batch_er_loss_given_pr_pos = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 er_pred_given_pr_pos,
                 er_labels_given_pr_pos,
-                pos_weight=er_given_pr_pos_weight,
+                pos_weight=er_pos_weight,
             )
         )
         batch_er_loss_given_pr_neg = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 er_pred_given_pr_neg,
                 er_labels_given_pr_neg,
-                pos_weight=er_given_pr_neg_weight,
+                pos_weight=er_pos_weight,
             )
         )
 
@@ -118,14 +103,14 @@ class LightningModel(LightningModule):
             torch.nn.functional.binary_cross_entropy_with_logits(
                 pr_pred_given_er_pos,
                 pr_labels_given_er_pos,
-                pos_weight=pr_given_er_pos_weight,
+                pos_weight=pr_pos_weight,
             )
         )
         batch_pr_loss_given_er_neg = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 pr_pred_given_er_neg,
                 pr_labels_given_er_neg,
-                pos_weight=pr_given_er_neg_weight,
+                pos_weight=pr_pos_weight,
             )
         )
 
@@ -171,8 +156,12 @@ class LightningModel(LightningModule):
                 auc_roc_pr_given_er_neg
             ) = auc_roc_pr_given_er_pos = 1
 
-        # We need to rescale our terms to match their contribution if we did one big call to bce
-        pr_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
+        # We can rescale our terms to match their contribution if we did one big call to bce
+        # but we may not wish to
+        if self.precise_oversample:
+            pr_pos_prevalance = 0.5
+        else:
+            pr_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
         # The sum of the multipliers for two partitions is 2 (e.g. 1 each)
         # Split between them according to ratio of their auc_roc
         # The bigger multiplier is assigned to the one with the smaller auc_roc
@@ -191,7 +180,9 @@ class LightningModel(LightningModule):
             + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg.nan_to_num(0)
         )
 
-        er_pos_prevalance = (er_labels == 1).sum() / len(er_labels)
+        er_pos_prevalance = 0.5
+        if not self.precise_oversample:
+            er_pos_prevalance = (pr_labels == 1).sum() / len(pr_labels)
         pr_given_er_pos_multiplier = er_pos_prevalance * (
             2
             * auc_roc_pr_given_er_neg

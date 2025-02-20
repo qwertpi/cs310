@@ -81,11 +81,7 @@ if __name__ == "__main__":
     trainer = GNNModelTrainer()
     for bos, pos, sl in tqdm(
         [
-            (False, False, False),
-            (True, False, False),
             (False, True, False),
-            (False, False, True),
-            (True, False, True),
             (False, True, True),
         ]
     ):
