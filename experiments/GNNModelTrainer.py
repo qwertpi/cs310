@@ -47,6 +47,8 @@ class LightningModel(LightningModule):
         scale_loss: bool,
     ):
         super().__init__()
+        if broad_oversample and precise_oversample:
+            raise ValueError("At most one oversampling strategy may be selected")
         self.model = torch_model
         self.weight_decay = weight_decay
         self.broad_oversample = broad_oversample
@@ -291,14 +293,11 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
-        broad_oversample: bool,
-        precise_oversample: bool,
-        scale_loss: bool,
         weight_decay: float = 1e-2,  # AdamW's default value
+        broad_oversample: bool = False,
+        precise_oversample: bool = True,
+        scale_loss: bool = False,
     ):
-        model_name = (
-            model_name + f"_{broad_oversample}_{precise_oversample}_{scale_loss}"
-        )
         NUM_FOLDS = 5
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
