@@ -5,6 +5,7 @@ from typing import BinaryIO, Callable
 import click
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score
 import torch
 import torch_geometric.nn  # type: ignore
 from tqdm import tqdm
@@ -153,6 +154,7 @@ def pr_margin_scatter(model_file: BinaryIO, data_file: BinaryIO):
     plt.xticks([])
     plt.legend()
     plt.savefig("scatter_all.png")
+    print(roc_auc_score(true_labels[:, 1], predictions))
 
     plt.clf()
     er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)
@@ -171,6 +173,7 @@ def pr_margin_scatter(model_file: BinaryIO, data_file: BinaryIO):
     )
     plt.xticks([])
     plt.savefig("scatter_ER+.png")
+    print(roc_auc_score(true_labels[:, 1][true_labels[:, 0] == True], predictions[true_labels[:, 0] == True]))
 
     plt.clf()
     er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)
@@ -191,6 +194,7 @@ def pr_margin_scatter(model_file: BinaryIO, data_file: BinaryIO):
     )
     plt.xticks([])
     plt.savefig("scatter_ER-.png")
+    print(roc_auc_score(true_labels[:, 1][true_labels[:, 0] == False], predictions[true_labels[:, 0] == False]))
 
 
 if __name__ == "__main__":
