@@ -152,7 +152,45 @@ def pr_margin_scatter(model_file: BinaryIO, data_file: BinaryIO):
     )
     plt.xticks([])
     plt.legend()
-    plt.savefig("scatter.png")
+    plt.savefig("scatter_all.png")
+
+    plt.clf()
+    er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_pos_pr_pos_mask],
+        y[er_pos_pr_pos_mask],
+        marker="o",
+        color="green",
+    )
+    er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_pos_pr_neg_mask],
+        y[er_pos_pr_neg_mask],
+        marker="o",
+        color="red",
+    )
+    plt.xticks([])
+    plt.savefig("scatter_ER+.png")
+
+    plt.clf()
+    er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_neg_pr_pos_mask],
+        y[er_neg_pr_pos_mask],
+        marker="s",
+        color="green",
+        label="ER-PR+",
+    )
+    er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_neg_pr_neg_mask],
+        y[er_neg_pr_neg_mask],
+        marker="s",
+        color="red",
+        label="ER-PR+",
+    )
+    plt.xticks([])
+    plt.savefig("scatter_ER-.png")
 
 
 if __name__ == "__main__":
