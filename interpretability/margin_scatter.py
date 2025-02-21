@@ -190,11 +190,118 @@ def pr_margin_scatter(model_file: BinaryIO, data_file: BinaryIO):
         y[er_neg_pr_neg_mask],
         marker="s",
         color="red",
-        label="ER-PR+",
+        label="ER-PR-",
     )
     plt.xticks([])
     plt.savefig("scatter_ER-.png")
     print(roc_auc_score(true_labels[:, 1][true_labels[:, 0] == False], predictions[true_labels[:, 0] == False]))
+
+    with torch.no_grad():
+        predictions = np.array(
+            [
+                torch.nn.functional.sigmoid(
+                    model(
+                        graph.x,
+                        graph.edge_index,
+                        torch.zeros(graph.x.size(0), dtype=torch.long),
+                    )[0][0]
+                )
+                for graph in tqdm(graphs)
+            ]
+        )
+
+    sort_idxs = np.argsort(predictions)
+    predictions = predictions[sort_idxs]
+    true_labels = true_labels[sort_idxs]
+
+    y = predictions
+    x = np.empty_like(y)
+    GAP = 0.05
+    last_y: dict[float, float] = {}
+    for i in range(len(y)):
+        candidate_x = 0.0
+        while last_y.get(candidate_x) and abs(y[i] - last_y[candidate_x]) < GAP:
+            candidate_x += GAP
+        x[i] = candidate_x
+        last_y[candidate_x] = y[i]
+
+    plt.figure()
+    er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_pos_pr_pos_mask],
+        y[er_pos_pr_pos_mask],
+        marker="o",
+        color="green",
+        label="ER+PR+",
+    )
+    er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_neg_pr_pos_mask],
+        y[er_neg_pr_pos_mask],
+        marker="o",
+        color="red",
+        label="ER-PR+",
+    )
+    er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_pos_pr_neg_mask],
+        y[er_pos_pr_neg_mask],
+        marker="s",
+        color="green",
+        label="ER+PR-",
+    )
+    er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_neg_pr_neg_mask],
+        y[er_neg_pr_neg_mask],
+        marker="s",
+        color="red",
+        label="ER-PR-",
+    )
+    plt.xticks([])
+    plt.legend()
+    plt.savefig("scatter_er_all.png")
+    print(roc_auc_score(true_labels[:, 0], predictions))
+
+    plt.clf()
+    er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_pos_pr_pos_mask],
+        y[er_pos_pr_pos_mask],
+        marker="o",
+        color="green",
+        label="ER+PR+",
+    )
+    er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)
+    plt.scatter(
+        x[er_neg_pr_pos_mask],
+        y[er_neg_pr_pos_mask],
+        marker="o",
+        color="red",
+        label="ER-PR+",
+    )
+    plt.savefig("scatter_PR+.png")
+    print(roc_auc_score(true_labels[:, 0][true_labels[:, 1] == True], predictions[true_labels[:, 1] == True]))
+
+    plt.clf()
+    er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_pos_pr_neg_mask],
+        y[er_pos_pr_neg_mask],
+        marker="s",
+        color="green",
+        label="ER+PR-",
+    )
+    er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)
+    plt.scatter(
+        x[er_neg_pr_neg_mask],
+        y[er_neg_pr_neg_mask],
+        marker="s",
+        color="red",
+        label="ER-PR-",
+    )
+    plt.savefig("scatter_PR-.png")
+    print(roc_auc_score(true_labels[:, 0][true_labels[:, 1] == False], predictions[true_labels[:, 1] == False]))
 
 
 if __name__ == "__main__":
