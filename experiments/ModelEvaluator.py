@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
 
+import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import (  # type: ignore
     average_precision_score,
@@ -104,6 +105,116 @@ def erpr_confusion_matrix(
     )
 
 
+def scatter_plots(
+    predictions_list: list[tuple[float, float]],
+    true_labels_list: list[tuple[int, int]],
+    prefix: str,
+):
+    def generate_points(label_idx: int):
+        y = predictions[:label_idx]
+        x = np.empty_like(y)
+        GAP = 0.05
+        last_y: dict[float, float] = {}
+        for i in range(len(y)):
+            candidate_x = 0.0
+            while last_y.get(candidate_x) and abs(y[i] - last_y[candidate_x]) < GAP:
+                candidate_x += GAP
+            x[i] = candidate_x
+            last_y[candidate_x] = y[i]
+        return x, y
+
+    def er_plot():
+        x, y = generate_points(0)
+        fig, ax = plt.subplots()
+        er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)  # noqa: E712
+        ax.scatter(
+            x[er_pos_pr_pos_mask],
+            y[er_pos_pr_pos_mask],
+            marker="o",
+            color="green",
+            label="ER+PR+",
+        )
+        er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)  # noqa: E712
+        ax.scatter(
+            x[er_pos_pr_neg_mask],
+            y[er_pos_pr_neg_mask],
+            marker="s",
+            color="green",
+            label="ER+PR-",
+        )
+        er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)  # noqa: E712
+        ax.scatter(
+            x[er_neg_pr_pos_mask],
+            y[er_neg_pr_pos_mask],
+            marker="o",
+            color="red",
+            label="ER-PR+",
+        )
+        er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)  # noqa: E712
+        ax.scatter(
+            x[er_neg_pr_neg_mask],
+            y[er_neg_pr_neg_mask],
+            marker="s",
+            color="red",
+            label="ER-PR-",
+        )
+        ax.set_xticks([])
+        fig.tight_layout()
+        ax.legend()
+        fig.savefig(f"{prefix}_scatter_PR.png")
+
+    def pr_plot():
+        x, y = generate_points(1)
+        fig, ax = plt.subplots()
+        er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)  # noqa: E712
+        ax.scatter(
+            x[er_pos_pr_pos_mask],
+            y[er_pos_pr_pos_mask],
+            marker="o",
+            color="green",
+            label="ER+PR+",
+        )
+        er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)  # noqa: E712
+        ax.scatter(
+            x[er_neg_pr_pos_mask],
+            y[er_neg_pr_pos_mask],
+            marker="s",
+            color="green",
+            label="ER-PR+",
+        )
+        er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)  # noqa: E712
+        ax.scatter(
+            x[er_pos_pr_neg_mask],
+            y[er_pos_pr_neg_mask],
+            marker="o",
+            color="red",
+            label="ER+PR-",
+        )
+        er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)  # noqa: E712
+        ax.scatter(
+            x[er_neg_pr_neg_mask],
+            y[er_neg_pr_neg_mask],
+            marker="s",
+            color="red",
+            label="ER-PR-",
+        )
+        ax.set_xticks([])
+        fig.tight_layout()
+        ax.legend()
+        fig.savefig(f"{prefix}_scatter_PR.png")
+
+    predictions = np.array(predictions_list)
+    true_labels = np.array(true_labels_list)
+    filter_mask: np.typing.NDArray = np.apply_along_axis(filter, 1, true_labels)  # type: ignore
+    predictions = predictions[filter_mask]
+    true_labels = true_labels[filter_mask]
+    sort_idxs = np.argsort(predictions)
+    predictions = predictions[sort_idxs]
+    true_labels = true_labels[sort_idxs]
+    er_plot()
+    pr_plot()
+
+
 class ModelEvaluator:
     METRICS: list[
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
@@ -172,6 +283,13 @@ class ModelEvaluator:
         self.epochs[self.fold_num] = epochs
         self.file.write(f"Epochs: {epochs}\n")
 
+        y_true_er = [t[0] for t in y_true]
+        y_true_pr = [t[1] for t in y_true]
+        scatter_plots(
+            list(zip(y_pred_er, y_pred_pr)),
+            list(zip(y_true_er, y_true_pr)),
+            f"{self.file.name.split('.')[0]}_{self.fold_num}",
+        )
         y_true_er = [t[0] for t in y_true]
         y_true_pr = [t[1] for t in y_true]
         metric_idx = 0
