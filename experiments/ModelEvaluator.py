@@ -1,4 +1,6 @@
 from __future__ import annotations
+from functools import partial
+from math import log
 from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
 
 if TYPE_CHECKING:
@@ -11,6 +13,15 @@ from sklearn.metrics import (  # type: ignore
     confusion_matrix,
     roc_auc_score,
 )
+import torch
+
+# ABCTB stats
+ER_POS_PREVALANCE = 2001 / 2538
+ER_POS_GIVEN_PR_POS_PREVALANCE = 1743 / 1792
+ER_POS_GIVEN_PR_NEG_PREVALANCE = 258 / 746
+PR_POS_PREVALANCE = 1792 / 2538
+PR_POS_GIVEN_ER_POS_PREVALANCE = 1743 / 2001
+PR_POS_GIVEN_ER_NEG_PREVALANCE = 49 / 537
 
 P = ParamSpec("P")
 
@@ -105,13 +116,36 @@ def erpr_confusion_matrix(
     )
 
 
+def point_usable_information(
+    true_labels: torch.Tensor, predictions: torch.Tensor, null_distribution: float
+):
+    # Adding 1 to each input value before loging it avoids issues with overflowing very negative numbers from instances where the model is conifdently incorrect
+    model_entropy = torch.log1p(
+        torch.where(true_labels == 1, predictions, 1 - predictions)
+    ) / log(2)
+    null_entropy = torch.log1p(
+        torch.where(true_labels == 1, null_distribution, 1 - null_distribution)
+    ) / log(2)
+    return model_entropy - null_entropy
+
+
+def average_usable_information(
+    true_labels: list[int],
+    predictions: list[float],
+    null_distribution: float,
+):
+    return point_usable_information(
+        torch.tensor(true_labels), torch.tensor(predictions), null_distribution
+    ).mean()
+
+
 def scatter_plots(
     predictions_list: list[tuple[float, float]],
     true_labels_list: list[tuple[int, int]],
     prefix: str,
 ):
     def generate_points(label_idx: int):
-        y = predictions[:label_idx]
+        y = predictions[:, label_idx]
         x = np.empty_like(y)
         GAP = 0.05
         last_y: dict[float, float] = {}
@@ -205,9 +239,6 @@ def scatter_plots(
 
     predictions = np.array(predictions_list)
     true_labels = np.array(true_labels_list)
-    filter_mask: np.typing.NDArray = np.apply_along_axis(filter, 1, true_labels)  # type: ignore
-    predictions = predictions[filter_mask]
-    true_labels = true_labels[filter_mask]
     sort_idxs = np.argsort(predictions)
     predictions = predictions[sort_idxs]
     true_labels = true_labels[sort_idxs]
@@ -224,6 +255,18 @@ class ModelEvaluator:
         ("AUC_ROC_PR", sndify2a(typed_roc)),
         ("AUC_PR_PR", sndify2a(typed_pr)),
         ("AUC_ROC_LABELSAGREE", roc_labels_agree),
+        (
+            "UI_ER",
+            fstify2a(
+                partial(average_usable_information, null_distribution=ER_POS_PREVALANCE)
+            ),
+        ),
+        (
+            "UI_PR",
+            sndify2a(
+                partial(average_usable_information, null_distribution=PR_POS_PREVALANCE)
+            ),
+        ),
     ]
     CONDITIONED_METRICS: list[
         tuple[
@@ -241,20 +284,68 @@ class ModelEvaluator:
         ]
     ] = [
         (
-            "AUC_ROC_ER_PR+",
+            "AUC_ROC_ER|PR+",
             condition_metric_wrapper(fstify2a(typed_roc), is_pr_pos),
         ),
         (
-            "AUC_ROC_ER_PR-",
+            "AUC_ROC_ER|PR-",
             condition_metric_wrapper(fstify2a(typed_roc), is_pr_neg),
         ),
         (
-            "AUC_ROC_PR_ER+",
+            "AUC_ROC_PR|ER+",
             condition_metric_wrapper(sndify2a(typed_roc), is_er_pos),
         ),
         (
-            "AUC_ROC_PR_ER-",
+            "AUC_ROC_PR|ER-",
             condition_metric_wrapper(sndify2a(typed_roc), is_er_neg),
+        ),
+        (
+            "UI_ER|PR+",
+            condition_metric_wrapper(
+                fstify2a(
+                    partial(
+                        average_usable_information,
+                        null_distribution=ER_POS_GIVEN_PR_POS_PREVALANCE,
+                    )
+                ),
+                is_pr_pos,
+            ),
+        ),
+        (
+            "UI_ER|PR-",
+            condition_metric_wrapper(
+                fstify2a(
+                    partial(
+                        average_usable_information,
+                        null_distribution=ER_POS_GIVEN_PR_NEG_PREVALANCE,
+                    )
+                ),
+                is_pr_neg,
+            ),
+        ),
+        (
+            "UI_PR|ER+",
+            condition_metric_wrapper(
+                sndify2a(
+                    partial(
+                        average_usable_information,
+                        null_distribution=PR_POS_GIVEN_ER_POS_PREVALANCE,
+                    )
+                ),
+                is_er_pos,
+            ),
+        ),
+        (
+            "UI_PR|ER-",
+            condition_metric_wrapper(
+                sndify2a(
+                    partial(
+                        average_usable_information,
+                        null_distribution=PR_POS_GIVEN_ER_NEG_PREVALANCE,
+                    )
+                ),
+                is_er_neg,
+            ),
         ),
     ]
     ALL_METRICS = METRICS + CONDITIONED_METRICS
@@ -285,13 +376,11 @@ class ModelEvaluator:
 
         y_true_er = [t[0] for t in y_true]
         y_true_pr = [t[1] for t in y_true]
-        scatter_plots(
-            list(zip(y_pred_er, y_pred_pr)),
-            list(zip(y_true_er, y_true_pr)),
-            f"{self.file.name.split('.')[0]}_{self.fold_num}",
-        )
-        y_true_er = [t[0] for t in y_true]
-        y_true_pr = [t[1] for t in y_true]
+        # scatter_plots(
+        #    list(zip(y_pred_er, y_pred_pr)),
+        #    list(zip(y_true_er, y_true_pr)),
+        #    f"{self.file.name.split('.')[0]}_{self.fold_num}",
+        # )
         metric_idx = 0
         for _, p_metric_func in self.METRICS:
             self.scores[self.fold_num, metric_idx] = p_metric_func(

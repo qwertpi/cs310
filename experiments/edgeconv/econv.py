@@ -134,16 +134,21 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for shared, seperate in tqdm(
+    for cos, fos, hos in tqdm(
         [
-            (0, 3),
-            (2, 1),
-            (1, 2),
-            (3, 1),
-            (2, 2),
-            (1, 3),
+            (False, True, True),
+            (False, True, False),
+            (False, False, True),
+            (True, False, True),
+            (True, False, False),
+            (False, False, False),
         ]
     ):
         trainer.train_and_validate(
-            partial(Model, 1, shared, seperate), f"econv_seperated_{shared}_{seperate}"
+            partial(Model, 1, 3, 0),
+            f"econv_smartloss_{cos}_{fos}_{hos}",
+            1e-2,
+            cos,
+            fos,
+            hos,
         )
