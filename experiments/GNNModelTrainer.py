@@ -22,11 +22,7 @@ from ModelEvaluator import (
     ModelEvaluator,
     point_usable_information,
     ER_POS_PREVALANCE,
-    ER_POS_GIVEN_PR_POS_PREVALANCE,
-    ER_POS_GIVEN_PR_NEG_PREVALANCE,
     PR_POS_PREVALANCE,
-    PR_POS_GIVEN_ER_POS_PREVALANCE,
-    PR_POS_GIVEN_ER_NEG_PREVALANCE,
 )
 
 torch.set_float32_matmul_precision("medium")
@@ -85,8 +81,8 @@ class LightningModel(LightningModule):
 
         # Amount of oversampling in the BCE losses so positive and negative examples count equally
         if self.coarse_oversample or self.fine_oversample:
-            er_pos_weight = ER_POS_PREVALANCE
-            pr_pos_weight = PR_POS_PREVALANCE
+            er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
+            pr_pos_weight = torch.tensor(PR_POS_PREVALANCE)
         else:
             er_pos_weight = pr_pos_weight = torch.tensor(1)
 
@@ -127,18 +123,12 @@ class LightningModel(LightningModule):
         # Oversample examples that the model finds hard
         # Based on Pointwise V-Information (https://proceedings.mlr.press/v162/ethayarajh22a/ethayarajh22a.pdf)
         if self.hardness_oversample:
-            if self.fine_oversample:
-                null_prob_er_pos_given_pr_pos = ER_POS_GIVEN_PR_POS_PREVALANCE
-                null_prob_er_pos_given_pr_neg = ER_POS_GIVEN_PR_NEG_PREVALANCE
-                null_prob_pr_pos_given_er_pos = PR_POS_GIVEN_ER_POS_PREVALANCE
-                null_prob_pr_pos_given_er_neg = PR_POS_GIVEN_ER_NEG_PREVALANCE
-            else:
-                null_prob_er_pos_given_pr_pos = null_prob_er_pos_given_pr_neg = (
-                    ER_POS_PREVALANCE
-                )
-                null_prob_pr_pos_given_er_pos = null_prob_pr_pos_given_er_neg = (
-                    PR_POS_PREVALANCE
-                )
+            null_prob_er_pos_given_pr_pos = null_prob_er_pos_given_pr_neg = (
+                ER_POS_PREVALANCE
+            )
+            null_prob_pr_pos_given_er_pos = null_prob_pr_pos_given_er_neg = (
+                PR_POS_PREVALANCE
+            )
 
             batch_er_loss_given_pr_pos = torch.dot(
                 torch.nn.functional.softmax(
