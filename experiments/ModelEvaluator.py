@@ -1,6 +1,5 @@
 from __future__ import annotations
 from functools import partial
-from math import log
 from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
 
 if TYPE_CHECKING:
@@ -119,13 +118,12 @@ def erpr_confusion_matrix(
 def point_usable_information(
     true_labels: torch.Tensor, predictions: torch.Tensor, null_distribution: float
 ):
-    # Adding 1 to each input value before loging it avoids issues with overflowing very negative numbers from instances where the model is conifdently incorrect
-    model_entropy = torch.log1p(
+    model_entropy = torch.log2(
         torch.where(true_labels == 1, predictions, 1 - predictions)
-    ) / log(2)
-    null_entropy = torch.log1p(
+    )
+    null_entropy = torch.log2(
         torch.where(true_labels == 1, null_distribution, 1 - null_distribution)
-    ) / log(2)
+    )
     return model_entropy - null_entropy
 
 

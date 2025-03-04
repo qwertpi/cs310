@@ -20,7 +20,6 @@ import torch_geometric.loader  # type: ignore
 
 from ModelEvaluator import (
     ModelEvaluator,
-    point_usable_information,
     ER_POS_PREVALANCE,
     PR_POS_PREVALANCE,
 )
@@ -46,18 +45,10 @@ class LightningModel(LightningModule):
         self,
         torch_model: torch.nn.Module,
         weight_decay: float,
-        coarse_oversample: bool,
-        fine_oversample: bool,
-        hardness_oversample: bool,
     ):
         super().__init__()
-        if coarse_oversample and fine_oversample:
-            raise ValueError("At most one oversampling strategy may be selected")
         self.model = torch_model
         self.weight_decay = weight_decay
-        self.coarse_oversample = coarse_oversample
-        self.fine_oversample = fine_oversample
-        self.hardness_oversample = hardness_oversample
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -79,139 +70,51 @@ class LightningModel(LightningModule):
         pr_pred_given_er_pos = pr_pred[er_labels == 1]
         pr_pred_given_er_neg = pr_pred[er_labels == 0]
 
-        # Amount of oversampling in the BCE losses so positive and negative examples count equally
-        if self.coarse_oversample or self.fine_oversample:
-            er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
-            pr_pos_weight = torch.tensor(PR_POS_PREVALANCE)
-        else:
-            er_pos_weight = pr_pos_weight = torch.tensor(1)
+        # Oversampling in the BCE losses so positive and negative examples count equally
+        er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
+        pr_pos_weight = torch.tensor(PR_POS_PREVALANCE)
 
-        elements_er_loss_given_pr_pos = (
+        batch_er_loss_given_pr_pos = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 er_pred_given_pr_pos,
                 er_labels_given_pr_pos,
                 pos_weight=er_pos_weight,
-                reduction="none",
             )
-        )
-        elements_er_loss_given_pr_neg = (
+        ).nan_to_num(0)
+        batch_er_loss_given_pr_neg = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 er_pred_given_pr_neg,
                 er_labels_given_pr_neg,
                 pos_weight=er_pos_weight,
-                reduction="none",
             )
-        )
+        ).nan_to_num(0)
 
-        elements_pr_loss_given_er_pos = (
+        batch_pr_loss_given_er_pos = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 pr_pred_given_er_pos,
                 pr_labels_given_er_pos,
                 pos_weight=pr_pos_weight,
-                reduction="none",
             )
-        )
-        elements_pr_loss_given_er_neg = (
+        ).nan_to_num(0)
+        batch_pr_loss_given_er_neg = (
             torch.nn.functional.binary_cross_entropy_with_logits(
                 pr_pred_given_er_neg,
                 pr_labels_given_er_neg,
                 pos_weight=pr_pos_weight,
-                reduction="none",
             )
-        )
+        ).nan_to_num(0)
 
-        # Oversample examples that the model finds hard
-        # Based on Pointwise V-Information (https://proceedings.mlr.press/v162/ethayarajh22a/ethayarajh22a.pdf)
-        if self.hardness_oversample:
-            null_prob_er_pos_given_pr_pos = null_prob_er_pos_given_pr_neg = (
-                ER_POS_PREVALANCE
-            )
-            null_prob_pr_pos_given_er_pos = null_prob_pr_pos_given_er_neg = (
-                PR_POS_PREVALANCE
-            )
-
-            batch_er_loss_given_pr_pos = torch.dot(
-                torch.nn.functional.softmax(
-                    -1
-                    * point_usable_information(  # we negate as we want to pay more attention to instances the model is extracting less information from
-                        er_labels_given_pr_pos,
-                        torch.nn.functional.sigmoid(er_pred_given_pr_pos),
-                        null_prob_er_pos_given_pr_pos,
-                    ),
-                    dim=0,
-                ),
-                elements_er_loss_given_pr_pos,
-            )
-            batch_er_loss_given_pr_neg = torch.dot(
-                torch.nn.functional.softmax(
-                    -1
-                    * point_usable_information(
-                        er_labels_given_pr_neg,
-                        torch.nn.functional.sigmoid(er_pred_given_pr_neg),
-                        null_prob_er_pos_given_pr_neg,
-                    ),
-                    dim=0,
-                ),
-                elements_er_loss_given_pr_neg,
-            )
-            batch_pr_loss_given_er_pos = torch.dot(
-                torch.nn.functional.softmax(
-                    -1
-                    * point_usable_information(
-                        pr_labels_given_er_pos,
-                        torch.nn.functional.sigmoid(pr_pred_given_er_pos),
-                        null_prob_pr_pos_given_er_pos,
-                    ),
-                    dim=0,
-                ),
-                elements_pr_loss_given_er_pos,
-            )
-            batch_pr_loss_given_er_neg = torch.dot(
-                torch.nn.functional.softmax(
-                    -1
-                    * point_usable_information(
-                        pr_labels_given_er_neg,
-                        torch.nn.functional.sigmoid(pr_pred_given_er_neg),
-                        null_prob_pr_pos_given_er_neg,
-                    ),
-                    dim=0,
-                ),
-                elements_pr_loss_given_er_neg,
-            )
-        else:
-            batch_er_loss_given_pr_pos = (
-                elements_er_loss_given_pr_pos.mean().nan_to_num(0)
-            )
-            batch_er_loss_given_pr_neg = (
-                elements_er_loss_given_pr_neg.mean().nan_to_num(0)
-            )
-            batch_pr_loss_given_er_pos = (
-                elements_pr_loss_given_er_pos.mean().nan_to_num(0)
-            )
-            batch_pr_loss_given_er_neg = (
-                elements_pr_loss_given_er_neg.mean().nan_to_num(0)
-            )
-
-        # We can rescale our terms to match their contribution as if we did one big call to bce
-        # but we may not wish to
-        if self.fine_oversample:
-            er_given_pr_pos_multiplier = er_given_pr_neg_multipler = 0.5
-        else:
-            er_given_pr_pos_multiplier = (pr_labels == 1).sum() / len(pr_labels)
-            er_given_pr_neg_multipler = (pr_labels == 0).sum() / len(pr_labels)
+        # Weight PR+, and PR- cases equally whereas if we had done
+        # one big call to BCE they would have been skewed by the uneven
+        # distribution of the PR label
         batch_er_loss = (
-            er_given_pr_pos_multiplier * batch_er_loss_given_pr_pos
-            + er_given_pr_neg_multipler * batch_er_loss_given_pr_neg
+            0.5 * batch_er_loss_given_pr_pos + 0.5 * batch_er_loss_given_pr_neg
         )
-
-        if self.fine_oversample:
-            pr_given_er_pos_multiplier = pr_given_er_neg_multipler = 0.5
-        else:
-            pr_given_er_pos_multiplier = (er_labels == 1).sum() / len(er_labels)
-            pr_given_er_neg_multipler = (er_labels == 0).sum() / len(er_labels)
+        # Weight ER+, and ER- cases equally whereas if we had done
+        # one big call to BCE they would have been skewed by the uneven
+        # distribution of the ER label
         batch_pr_loss = (
-            pr_given_er_pos_multiplier * batch_pr_loss_given_er_pos
-            + pr_given_er_neg_multipler * batch_pr_loss_given_er_neg
+            0.5 * batch_pr_loss_given_er_pos + 0.5 * batch_pr_loss_given_er_neg
         )
 
         loss = batch_er_loss + batch_pr_loss
@@ -308,9 +211,6 @@ class GNNModelTrainer:
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
         weight_decay: float = 1e-2,  # AdamW's default value
-        coarse_oversample: bool = False,
-        fine_oversample: bool = True,
-        hardness_oversample: bool = False,
     ):
         NUM_FOLDS = 5
         # Delete the file if it already exists
@@ -325,11 +225,8 @@ class GNNModelTrainer:
             model = LightningModel(
                 make_model(),
                 weight_decay,
-                coarse_oversample,
-                fine_oversample,
-                hardness_oversample,
             )
-            early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+            early_stopping = EarlyStopping(monitor="val_loss", patience=20)
 
             t0 = t1 = checkpoint = validation_loader = None
             while batch_size > 1:
