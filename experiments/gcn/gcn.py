@@ -18,9 +18,7 @@ class GCNBlock(torch.nn.Module):
         self.act = act
 
     def forward(self, x, edge_index):
-        return self.act(
-            self.dropout(torch.sum(torch.tensor([x, self.conv(x, edge_index)])))
-        )
+        return self.act(self.dropout(x + self.conv(x, edge_index)))
 
 
 class Model(torch.nn.Module):

@@ -21,7 +21,7 @@ class GATBlock(torch.nn.Module):
         self.act = act
 
     def forward(self, x, edge_index):
-        return self.act(self.bn(torch.sum(torch.tensor([x, self.att(x, edge_index)]))))
+        return self.act(self.bn(x + self.att(x, edge_index)))
 
 
 class Model(torch.nn.Module):

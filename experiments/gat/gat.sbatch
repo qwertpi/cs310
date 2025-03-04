@@ -7,7 +7,7 @@
 #SBATCH --mem=7G
 #SBATCH --time=00:30:0
 #
-#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=slurm_%j.out
 #SBATCH --error=slurm_%j.err
 

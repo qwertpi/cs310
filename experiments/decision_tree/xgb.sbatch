@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 #SBATCH --job-name=xgb
-#SBATCH --partition=gecko,falcon,eagle
+#SBATCH --partition=gecko,falcon
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --gres=gpu:1

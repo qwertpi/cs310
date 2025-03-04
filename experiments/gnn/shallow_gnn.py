@@ -18,7 +18,7 @@ class Model(torch.nn.Module):
         self.readout = torch.nn.Linear(1024, 2)
 
     def forward(self, x, edge_index, batch):
-        h = torch.sum(torch.tensor([x, self.lin(x)]))
+        h = x + self.lin(x)
         h = self.act(h)
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         out = self.readout(h)
