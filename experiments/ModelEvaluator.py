@@ -142,8 +142,18 @@ def scatter_plots(
     true_labels_list: list[tuple[int, int]],
     prefix: str,
 ):
-    def generate_points(label_idx: int):
-        y = predictions[:, label_idx]
+    def plot(
+        label_idx: int,
+        suffix: str,
+        erpos_prneg_color: str,
+        erpos_prneg_marker: str,
+        erneg_prpos_color: str,
+        erneg_prpos_marker: str,
+    ):
+        y = np.array(predictions_list)[:, label_idx]
+        sort_idxs = np.argsort(y)
+        y = y[sort_idxs]
+        true_labels = np.array(true_labels_list)[sort_idxs]
         x = np.empty_like(y)
         GAP = 0.05
         last_y: dict[float, float] = {}
@@ -153,95 +163,34 @@ def scatter_plots(
                 candidate_x += GAP
             x[i] = candidate_x
             last_y[candidate_x] = y[i]
-        return x, y
 
-    def er_plot():
-        x, y = generate_points(0)
         fig, ax = plt.subplots()
-        er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)  # noqa: E712
-        ax.scatter(
-            x[er_pos_pr_pos_mask],
-            y[er_pos_pr_pos_mask],
-            marker="o",
-            color="green",
-            label="ER+PR+",
-        )
-        er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)  # noqa: E712
-        ax.scatter(
-            x[er_pos_pr_neg_mask],
-            y[er_pos_pr_neg_mask],
-            marker="s",
-            color="green",
-            label="ER+PR-",
-        )
-        er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)  # noqa: E712
-        ax.scatter(
-            x[er_neg_pr_pos_mask],
-            y[er_neg_pr_pos_mask],
-            marker="o",
-            color="red",
-            label="ER-PR+",
-        )
-        er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)  # noqa: E712
-        ax.scatter(
-            x[er_neg_pr_neg_mask],
-            y[er_neg_pr_neg_mask],
-            marker="s",
-            color="red",
-            label="ER-PR-",
-        )
+
+        def scatter(
+            er_target: bool, pr_target: bool, marker: str, color: str, label: str
+        ):
+            mask = (true_labels[:, 0] == er_target) & (true_labels[:, 1] == pr_target)  # noqa: E712
+            ax.scatter(
+                x[mask],
+                y[mask],
+                marker=marker,
+                color=color,
+                label=label,
+            )
+
+        scatter(True, True, "o", "green", "ER+PR+")
+        scatter(True, False, erpos_prneg_marker, erpos_prneg_color, "ER+PR-")
+        scatter(False, True, erneg_prpos_marker, erneg_prpos_color, "ER-PR+")
+        scatter(False, False, "s", "red", "ER-PR-")
+
         ax.set_xticks([])
         fig.tight_layout()
         ax.legend()
-        fig.savefig(f"{prefix}_scatter_PR.png")
+        fig.savefig(f"{prefix}_scatter_{suffix}.png")
+        plt.close(fig)
 
-    def pr_plot():
-        x, y = generate_points(1)
-        fig, ax = plt.subplots()
-        er_pos_pr_pos_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == True)  # noqa: E712
-        ax.scatter(
-            x[er_pos_pr_pos_mask],
-            y[er_pos_pr_pos_mask],
-            marker="o",
-            color="green",
-            label="ER+PR+",
-        )
-        er_neg_pr_pos_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == True)  # noqa: E712
-        ax.scatter(
-            x[er_neg_pr_pos_mask],
-            y[er_neg_pr_pos_mask],
-            marker="s",
-            color="green",
-            label="ER-PR+",
-        )
-        er_pos_pr_neg_mask = (true_labels[:, 0] == True) & (true_labels[:, 1] == False)  # noqa: E712
-        ax.scatter(
-            x[er_pos_pr_neg_mask],
-            y[er_pos_pr_neg_mask],
-            marker="o",
-            color="red",
-            label="ER+PR-",
-        )
-        er_neg_pr_neg_mask = (true_labels[:, 0] == False) & (true_labels[:, 1] == False)  # noqa: E712
-        ax.scatter(
-            x[er_neg_pr_neg_mask],
-            y[er_neg_pr_neg_mask],
-            marker="s",
-            color="red",
-            label="ER-PR-",
-        )
-        ax.set_xticks([])
-        fig.tight_layout()
-        ax.legend()
-        fig.savefig(f"{prefix}_scatter_PR.png")
-
-    predictions = np.array(predictions_list)
-    true_labels = np.array(true_labels_list)
-    sort_idxs = np.argsort(predictions)
-    predictions = predictions[sort_idxs]
-    true_labels = true_labels[sort_idxs]
-    er_plot()
-    pr_plot()
+    plot(0, "ER", "green", "s", "red", "o")
+    plot(1, "PR", "red", "o", "green", "s")
 
 
 class ModelEvaluator:
@@ -374,11 +323,11 @@ class ModelEvaluator:
 
         y_true_er = [t[0] for t in y_true]
         y_true_pr = [t[1] for t in y_true]
-        # scatter_plots(
-        #    list(zip(y_pred_er, y_pred_pr)),
-        #    list(zip(y_true_er, y_true_pr)),
-        #    f"{self.file.name.split('.')[0]}_{self.fold_num}",
-        # )
+        scatter_plots(
+            list(zip(y_pred_er, y_pred_pr)),
+            list(zip(y_true_er, y_true_pr)),
+            f"{self.file.name.split('.')[0]}_{self.fold_num}",
+        )
         metric_idx = 0
         for _, p_metric_func in self.METRICS:
             self.scores[self.fold_num, metric_idx] = p_metric_func(
