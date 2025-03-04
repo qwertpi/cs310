@@ -154,3 +154,4 @@ if __name__ == "__main__":
             partial(Model, 1, shared, seperate),
             f"econv_seperated_{shared}_{seperate}",
         )
+

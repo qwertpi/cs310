@@ -39,6 +39,6 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
     trainer.train_and_validate(
-        partial(Model, 2, act=torch.nn.Identity()),
+        partial(Model, 2, act=torch.nn.PReLU()),
         "gcn",
     )

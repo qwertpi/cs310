@@ -2,15 +2,19 @@ from __future__ import annotations
 from functools import partial
 from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
 
+from numpy.typing import NDArray
+
 if TYPE_CHECKING:
     from _typeshed import ConvertibleToFloat
 
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import (  # type: ignore
+    auc,
     average_precision_score,
     confusion_matrix,
     roc_auc_score,
+    roc_curve,
 )
 import torch
 
@@ -33,6 +37,21 @@ def float_wrapper(f: Callable[P, ConvertibleToFloat]):
 
 
 T = TypeVar("T")
+U = TypeVar("U")
+
+
+def condition_wrapper(
+    f: Callable[[list[int], list[float]], T],
+    filter: Callable[[U], bool],
+):
+    def ret_func(labels: list[U], true: list[int], pred: list[float]):
+        idxs = [i for i, l in enumerate(labels) if filter(l)]
+        return f(
+            [true[i] for i in idxs],
+            [pred[i] for i in idxs],
+        )
+
+    return ret_func
 
 
 def condition_metric_wrapper(
@@ -69,13 +88,19 @@ def is_pr_neg(t: list[int]) -> bool:
     return not t[1]  # type: ignore
 
 
-def typed_roc(x1: list[int], x2: list[float]) -> float:
+def typed_roc_curve(
+    true: list[int], pred: list[float]
+) -> tuple[NDArray, NDArray, NDArray]:
+    return roc_curve(true, pred)  # type: ignore
+
+
+def typed_auc_roc(x1: list[int], x2: list[float]) -> float:
     if len(set(x1)) < 2:
         return float("nan")
     return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
 
 
-def typed_pr(x1: list[int], x2: list[float]) -> float:
+def typed_auc_pr(x1: list[int], x2: list[float]) -> float:
     if len(set(x1)) < 2:
         return float("nan")
     return float_wrapper(average_precision_score)(x1, x2)  # type: ignore
@@ -98,7 +123,7 @@ def sndify2a(f):
 def roc_labels_agree(
     er_true: list[int], er_pred: list[float], pr_true: list[int], pr_pred: list[float]
 ):
-    return typed_roc(
+    return typed_auc_roc(
         [e == p for e, p in zip(er_true, pr_true)],
         [e * p + (1 - e) * (1 - p) for e, p in zip(er_pred, pr_pred)],
     )
@@ -197,10 +222,10 @@ class ModelEvaluator:
     METRICS: list[
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
     ] = [
-        ("AUC_ROC_ER", fstify2a(typed_roc)),
-        ("AUC_PR_ER", fstify2a(typed_pr)),
-        ("AUC_ROC_PR", sndify2a(typed_roc)),
-        ("AUC_PR_PR", sndify2a(typed_pr)),
+        ("AUC_ROC_ER", fstify2a(typed_auc_roc)),
+        ("AUC_PR_ER", fstify2a(typed_auc_pr)),
+        ("AUC_ROC_PR", sndify2a(typed_auc_roc)),
+        ("AUC_PR_PR", sndify2a(typed_auc_pr)),
         ("AUC_ROC_LABELSAGREE", roc_labels_agree),
         (
             "UI_ER",
@@ -232,19 +257,19 @@ class ModelEvaluator:
     ] = [
         (
             "AUC_ROC_ER|PR+",
-            condition_metric_wrapper(fstify2a(typed_roc), is_pr_pos),
+            condition_metric_wrapper(fstify2a(typed_auc_roc), is_pr_pos),
         ),
         (
             "AUC_ROC_ER|PR-",
-            condition_metric_wrapper(fstify2a(typed_roc), is_pr_neg),
+            condition_metric_wrapper(fstify2a(typed_auc_roc), is_pr_neg),
         ),
         (
             "AUC_ROC_PR|ER+",
-            condition_metric_wrapper(sndify2a(typed_roc), is_er_pos),
+            condition_metric_wrapper(sndify2a(typed_auc_roc), is_er_pos),
         ),
         (
             "AUC_ROC_PR|ER-",
-            condition_metric_wrapper(sndify2a(typed_roc), is_er_neg),
+            condition_metric_wrapper(sndify2a(typed_auc_roc), is_er_neg),
         ),
         (
             "UI_ER|PR+",
@@ -301,11 +326,147 @@ class ModelEvaluator:
 
     def __init__(self, num_folds: int, file: TextIO):
         self.fold_num = 0
+
+        self.er_roc_curve_fig, self.er_roc_curve_ax = plt.subplots()
+        self.er_prneg_roc_curve_fig, self.er_prneg_roc_curve_ax = plt.subplots()
+        self.pr_roc_curve_fig, self.pr_roc_curve_ax = plt.subplots()
+        self.pr_erpos_roc_curve_fig, self.pr_erpos_roc_curve_ax = plt.subplots()
+        self.er_fprs: list[NDArray] = []
+        self.er_tprs: list[NDArray] = []
+        self.er_prneg_fprs: list[NDArray] = []
+        self.er_prneg_tprs: list[NDArray] = []
+        self.pr_fprs: list[NDArray] = []
+        self.pr_tprs: list[NDArray] = []
+        self.pr_erpos_fprs: list[NDArray] = []
+        self.pr_erpos_tprs: list[NDArray] = []
+
+        self.er_auc_rocs = np.empty(num_folds)
+        self.er_prneg_auc_rocs = np.empty(num_folds)
+        self.pr_auc_rocs = np.empty(num_folds)
+        self.pr_erpos_auc_rocs = np.empty(num_folds)
+
         self.scores = np.empty((num_folds, len(self.ALL_METRICS)))
         self.double_receptor_confusion_matrices = np.empty((num_folds, 4, 4))
         self.train_times = np.empty((num_folds))
         self.epochs = np.empty((num_folds))
         self.file = file
+
+    def _plot_rocs(
+        self,
+        y_true: list[list[int]],
+        y_true_er: list[int],
+        y_pred_er: list[float],
+        y_true_pr: list[int],
+        y_pred_pr: list[float],
+    ):
+        # Based on: https://github.com/foxtrotmike/CS909/blob/master/evaluation_example.ipynb
+        # Date acessed: 2025-03-04
+        er_fpr, er_tpr, _ = typed_roc_curve(y_true_er, y_pred_er)
+        er_prneg_fpr, er_prneg_tpr, _ = condition_wrapper(typed_roc_curve, is_pr_neg)(
+            y_true, y_true_er, y_pred_er
+        )
+        pr_fpr, pr_tpr, _ = typed_roc_curve(y_true_pr, y_pred_pr)
+        pr_erpos_fpr, pr_erpos_tpr, _ = condition_wrapper(typed_roc_curve, is_er_pos)(
+            y_true, y_true_pr, y_pred_pr
+        )
+
+        self.er_auc_rocs[self.fold_num] = auc(er_fpr, er_tpr)
+        self.er_prneg_auc_rocs[self.fold_num] = auc(er_prneg_fpr, er_prneg_tpr)
+        self.pr_auc_rocs[self.fold_num] = auc(pr_fpr, pr_tpr)
+        self.pr_erpos_auc_rocs[self.fold_num] = auc(pr_erpos_fpr, pr_erpos_tpr)
+
+        self.er_roc_curve_ax.plot(
+            er_fpr,
+            er_tpr,
+            alpha=0.5,
+            label=f"Fold {self.fold_num} (AUC = {self.er_auc_rocs[self.fold_num]:.2f})",
+        )
+        self.er_prneg_roc_curve_ax.plot(
+            er_prneg_fpr,
+            er_prneg_tpr,
+            alpha=0.5,
+            label=f"Fold {self.fold_num} (AUC = {self.er_prneg_auc_rocs[self.fold_num]:.2f})",
+        )
+        self.pr_roc_curve_ax.plot(
+            pr_fpr,
+            pr_tpr,
+            alpha=0.5,
+            label=f"Fold {self.fold_num} (AUC = {self.pr_auc_rocs[self.fold_num]:.2f})",
+        )
+        self.pr_erpos_roc_curve_ax.plot(
+            pr_erpos_fpr,
+            pr_erpos_tpr,
+            alpha=0.5,
+            label=f"Fold {self.fold_num} (AUC = {self.pr_erpos_auc_rocs[self.fold_num]:.2f})",
+        )
+
+        self.er_fprs.append(er_fpr)
+        self.er_tprs.append(er_tpr)
+        self.er_prneg_fprs.append(er_prneg_fpr)
+        self.er_prneg_tprs.append(er_prneg_tpr)
+        self.pr_fprs.append(pr_fpr)
+        self.pr_tprs.append(pr_tpr)
+        self.pr_erpos_fprs.append(pr_erpos_fpr)
+        self.pr_erpos_tprs.append(pr_erpos_tpr)
+
+    def _close_roc_plots(self):
+        for title, fig, ax, fprs, tprs, aucs in (
+            (
+                "ROC(ER)",
+                self.er_roc_curve_fig,
+                self.er_roc_curve_ax,
+                self.er_fprs,
+                self.er_tprs,
+                self.er_auc_rocs,
+            ),
+            (
+                "ROC(ER|PR-)",
+                self.er_prneg_roc_curve_fig,
+                self.er_prneg_roc_curve_ax,
+                self.er_prneg_fprs,
+                self.er_prneg_tprs,
+                self.er_prneg_auc_rocs,
+            ),
+            (
+                "ROC(PR)",
+                self.pr_roc_curve_fig,
+                self.pr_roc_curve_ax,
+                self.pr_fprs,
+                self.pr_tprs,
+                self.pr_auc_rocs,
+            ),
+            (
+                "ROC(PR|ER+)",
+                self.pr_erpos_roc_curve_fig,
+                self.pr_erpos_roc_curve_ax,
+                self.pr_erpos_fprs,
+                self.pr_erpos_tprs,
+                self.pr_erpos_auc_rocs,
+            ),
+        ):
+            mean_fpr = np.linspace(0, 1, 100)
+            mean_tpr = np.nanmean(
+                [np.interp(mean_fpr, fpr, tpr) for fpr, tpr in zip(fprs, tprs)], axis=0
+            )
+            mean_tpr[-1] = 1.0
+            mean_auc = np.nanmean(aucs)
+            std_auc = np.nanstd(aucs)
+            ax.plot(
+                mean_fpr,
+                mean_tpr,
+                color="black",
+                label=f"Mean (AUC = {mean_auc:.2f} ± {std_auc:.2f})",
+            )
+
+            ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
+            ax.set_xlabel("False Positive Rate")
+            ax.set_ylabel("True Positive Rate")
+            ax.set_title(title)
+            ax.legend(loc="lower right")
+            ax.grid()
+            fig.tight_layout()
+            fig.savefig(f"{self.file.name.split('.')[0]}_{title}.png")
+            plt.close(fig)
 
     def evalaute_fold(
         self,
@@ -323,11 +484,15 @@ class ModelEvaluator:
 
         y_true_er = [t[0] for t in y_true]
         y_true_pr = [t[1] for t in y_true]
+
         scatter_plots(
             list(zip(y_pred_er, y_pred_pr)),
             list(zip(y_true_er, y_true_pr)),
             f"{self.file.name.split('.')[0]}_{self.fold_num}",
         )
+
+        self._plot_rocs(y_true, y_true_er, y_pred_er, y_true_pr, y_pred_pr)
+
         metric_idx = 0
         for _, p_metric_func in self.METRICS:
             self.scores[self.fold_num, metric_idx] = p_metric_func(
@@ -359,6 +524,8 @@ class ModelEvaluator:
         self.fold_num += 1
 
     def close(self):
+        self._close_roc_plots()
+
         metric_means = np.nanmean(self.scores, axis=0)
         double_receptor_matrix_mean = np.mean(
             self.double_receptor_confusion_matrices, axis=0
