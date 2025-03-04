@@ -13,12 +13,14 @@ from GNNModelTrainer import GNNModelTrainer  # type: ignore
 class GCNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module):
         super().__init__()
-        self.att = torch_geometric.nn.GCNConv(1024, 1024)
+        self.conv = torch_geometric.nn.GCNConv(1024, 1024)
         self.dropout = torch.nn.Dropout(0.5)
         self.act = act
 
     def forward(self, x, edge_index):
-        return self.act(self.dropout(self.att(x, edge_index)))
+        return self.act(
+            self.dropout(torch.sum(torch.tensor([x, self.conv(x, edge_index)])))
+        )
 
 
 class Model(torch.nn.Module):
