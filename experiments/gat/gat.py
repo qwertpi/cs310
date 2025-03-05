@@ -34,7 +34,7 @@ class Model(torch.nn.Module):
 
     def forward(self, x, edge_index, batch):
         h = x
-        prev_h = h
+        prev_h = torch.zeros_like(x)
         for block in self.blocks:
             block_out = block(prev_h, h, edge_index)
             prev_h = h
@@ -47,6 +47,6 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
     trainer.train_and_validate(
-        partial(Model, 2, 256, torch.nn.PReLU()),
+        partial(Model, 3, 8, torch.nn.ELU()),
         "gat",
     )

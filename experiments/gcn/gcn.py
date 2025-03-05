@@ -14,11 +14,11 @@ class GCNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module):
         super().__init__()
         self.conv = torch_geometric.nn.GCNConv(1024, 1024)
-        self.dropout = torch.nn.Dropout(0.5)
+        self.bn = torch.nn.BatchNorm1d(1024)
         self.act = act
 
     def forward(self, prev, x, edge_index):
-        return self.act(self.dropout(prev + self.conv(x, edge_index)))
+        return self.act(self.bn(prev + self.conv(x, edge_index)))
 
 
 class Model(torch.nn.Module):
@@ -29,7 +29,7 @@ class Model(torch.nn.Module):
 
     def forward(self, x, edge_index, batch):
         h = x
-        prev_h = h
+        prev_h = torch.zeros_like(x)
         for block in self.blocks:
             block_out = block(prev_h, h, edge_index)
             prev_h = h
@@ -42,6 +42,6 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
     trainer.train_and_validate(
-        partial(Model, 2, act=torch.nn.PReLU()),
+        partial(Model, 3, act=torch.nn.ELU()),
         "gcn",
     )

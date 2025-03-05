@@ -10,7 +10,6 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
@@ -98,8 +97,6 @@ class Model(torch.nn.Module):
         self.pr_posts = torch.nn.ModuleList(
             [SingleReceptorPostProcessing() for _ in self.pr_sublocks]
         )
-        self.er_readout = torch.nn.Linear(1, 1)
-        self.pr_readout = torch.nn.Linear(1, 1)
 
     def forward(self, x, edge_index, batch):
         block_outputs = []
@@ -122,14 +119,9 @@ class Model(torch.nn.Module):
             pr_h = pr_subblock(pr_h, edge_index)
             pr_out = pr_post(pr_h, batch)
             block_outputs.append(torch.concat((er_out, pr_out), dim=-1))
+
         agg: torch.Tensor = sum(block_outputs)  # type: ignore
-        return torch.concat(
-            (
-                self.er_readout(agg[:, 0].unsqueeze(1)),
-                self.pr_readout(agg[:, 1].unsqueeze(1)),
-            ),
-            dim=-1,
-        )
+        return agg
 
 
 if __name__ == "__main__":
@@ -138,20 +130,4 @@ if __name__ == "__main__":
         partial(Model, 1, 3, 0),
         "econv",
     )
-    for shared, seperate in tqdm(
-        [
-            (3, 1),
-            (0, 3),
-            (2, 1),
-            (1, 2),
-            (0, 4),
-            (1, 3),
-            (2, 2),
-            (4, 0),
-        ]
-    ):
-        trainer.train_and_validate(
-            partial(Model, 1, shared, seperate),
-            f"econv_seperated_{shared}_{seperate}",
-        )
 
