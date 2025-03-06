@@ -20,8 +20,8 @@ class GATBlock(torch.nn.Module):
         self.bn = torch.nn.BatchNorm1d(1024)
         self.act = act
 
-    def forward(self, x, edge_index):
-        return self.act(self.bn(x + self.att(x, edge_index)))
+    def forward(self, prev, x, edge_index):
+        return self.act(self.bn(prev + self.att(x, edge_index)))
 
 
 class Model(torch.nn.Module):
@@ -34,8 +34,11 @@ class Model(torch.nn.Module):
 
     def forward(self, x, edge_index, batch):
         h = x
+        prev_h = h
         for block in self.blocks:
-            h = block(h, edge_index)
+            block_out = block(prev_h, h, edge_index)
+            prev_h = h
+            h = block_out
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         out = self.readout(h)
         return out
