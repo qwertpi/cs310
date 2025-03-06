@@ -60,15 +60,16 @@ class LightningModel(LightningModule):
         er_pred = out[:, 0]
         pr_pred = out[:, 1]
 
-        er_labels_given_pr_pos = er_labels[pr_labels == 1]
+        # We drop ER-PR+ cases to avoid confusing the model
+        er_labels_given_pr_pos = er_labels[(pr_labels == 1) & (er_labels == 1)]
         er_labels_given_pr_neg = er_labels[pr_labels == 0]
         pr_labels_given_er_pos = pr_labels[er_labels == 1]
-        pr_labels_given_er_neg = pr_labels[er_labels == 0]
+        pr_labels_given_er_neg = pr_labels[(er_labels == 0) & (pr_labels == 0)]
 
-        er_pred_given_pr_pos = er_pred[pr_labels == 1]
+        er_pred_given_pr_pos = er_pred[(pr_labels == 1) & (er_labels == 1)]
         er_pred_given_pr_neg = er_pred[pr_labels == 0]
         pr_pred_given_er_pos = pr_pred[er_labels == 1]
-        pr_pred_given_er_neg = pr_pred[er_labels == 0]
+        pr_pred_given_er_neg = pr_pred[(er_labels == 0) & (pr_labels == 0)]
 
         # Oversampling in the BCE losses so positive and negative examples count equally
         er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
