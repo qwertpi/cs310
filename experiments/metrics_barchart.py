@@ -4,36 +4,37 @@ import matplotlib.pyplot as plt
 
 plt.rcParams.update({"font.size": 14})
 
-models = ["Linear GNN", "GNN", "GCN", "GAT", "EdgeConv"]
+models = [
+    "3 Shared 0 Separate",
+    "2 Shared 1 Separate",
+    "1 Shared 2 Separate",
+    "0 Shared 3 Separate",
+]
 er_metrics = ["AUCROC(ER)", "AUCROC(ER|PR−)"]
 er_means = [
-    [0.838, 0.780],
-    [0.837, 0.753],
-    [0.863, 0.751],
-    [0.871, 0.773],
-    [0.880, 0.810],
+    [0.900, 0.839],
+    [0.891, 0.819],
+    [0.878, 0.801],
+    [0.851, 0.783],
 ]
 er_stds = [
-    [0.042, 0.062],
-    [0.050, 0.062],
-    [0.019, 0.065],
-    [0.037, 0.054],
-    [0.023, 0.073],
+    [0.026, 0.071],
+    [0.041, 0.094],
+    [0.028, 0.097],
+    [0.100, 0.103],
 ]
 pr_metrics = ["AUCROC(PR)", "AUCROC(PR|ER+)"]
 pr_means = [
-    [0.806, 0.674],
-    [0.799, 0.692],
-    [0.812, 0.672],
-    [0.828, 0.686],
-    [0.833, 0.723],
+    [0.834, 0.687],
+    [0.835, 0.690],
+    [0.822, 0.658],
+    [0.795, 0.625],
 ]
 pr_stds = [
-    [0.038, 0.074],
-    [0.043, 0.112],
-    [0.026, 0.053],
-    [0.046, 0.108],
-    [0.059, 0.105],
+    [0.031, 0.068],
+    [0.050, 0.101],
+    [0.040, 0.105],
+    [0.081, 0.106],
 ]
 
 fig, ax = plt.subplots()
@@ -55,7 +56,7 @@ for model, means, stds in zip(models, er_means, er_stds):
             xerr=std,
             capsize=5,
         )
-        ax.text(0.51, bar[0].get_y()+0.25, f"{mean:.3f}±{std:.3f}")
+        ax.text(0.51, bar[0].get_y() + 0.25, f"{mean:.3f}±{std:.3f}")
         legend_data[metric] = bar
         y_pos -= 1
     y_pos -= 1
@@ -74,7 +75,7 @@ for model, means, stds in zip(models, pr_means, pr_stds):
             xerr=std,
             capsize=5,
         )
-        ax.text(0.51, bar[0].get_y()+0.25, f"{mean:.3f}±{std:.3f}")
+        ax.text(0.51, bar[0].get_y() + 0.25, f"{mean:.3f}±{std:.3f}")
         legend_data[metric] = bar
         y_pos -= 1
     y_pos -= 1
