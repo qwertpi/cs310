@@ -2,10 +2,10 @@
 #
 #SBATCH --ntasks=1
 #SBATCH --job-name=gnn
-#SBATCH --partition=falcon,gecko
+#SBATCH --partition=eagle,falcon,gecko
 #SBATCH --gres=gpu:1
 #SBATCH --mem=7G
-#SBATCH --time=18:00:00
+#SBATCH --time=0:20:00
 #
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=slurm_%j.out

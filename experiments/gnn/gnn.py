@@ -3,7 +3,6 @@ import sys
 
 sys.path.insert(0, "..")
 
-from tqdm import tqdm
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
@@ -39,5 +38,4 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for n in tqdm((2, 3, 4, 5, 6)):
-        trainer.train_and_validate(partial(Model, n, torch.nn.ELU()), "gnn_{n}")
+    trainer.train_and_validate(partial(Model, 1, torch.nn.ELU()), "gnn")
