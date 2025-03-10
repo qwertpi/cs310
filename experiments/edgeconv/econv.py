@@ -126,8 +126,13 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(
-        partial(Model, 1, 3, 0),
-        "econv",
-    )
-
+    for shared, seperate in (
+        (0, 3),
+        (2, 1),
+        (1, 2),
+        (3, 0),
+    ):
+        trainer.train_and_validate(
+            partial(Model, 1, shared, seperate),
+            f"econv_seperated_{shared}_{seperate}",
+        )
