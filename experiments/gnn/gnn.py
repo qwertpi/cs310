@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, "..")
 
+from tqdm import tqdm
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
@@ -10,16 +11,27 @@ import torch_geometric.nn  # type: ignore
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
-class Model(torch.nn.Module):
+class GNNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module):
         super().__init__()
         self.lin = torch_geometric.nn.Linear(1024, 1024)
+        self.bn = torch.nn.BatchNorm1d(1024)
         self.act = act
+
+    def forward(self, x):
+        return self.act(self.bn(self.lin(x)))
+
+
+class Model(torch.nn.Module):
+    def __init__(self, num_blocks: int, act: torch.nn.Module):
+        super().__init__()
+        self.blocks = torch.nn.ModuleList([GNNBlock(act) for _ in range(num_blocks)])
         self.readout = torch.nn.Linear(1024, 2)
 
     def forward(self, x, edge_index, batch):
-        h = self.lin(x)
-        h = self.act(h)
+        h = x
+        for block in self.blocks:
+            h = block(h)
         h = torch_geometric.nn.pool.global_mean_pool(h, batch)
         out = self.readout(h)
         return out
@@ -27,4 +39,5 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(partial(Model, torch.nn.Identity()), "gnn")
+    for n in tqdm((2, 3, 4, 5, 6)):
+        trainer.train_and_validate(partial(Model, n, torch.nn.ELU()), "gnn_{n}")

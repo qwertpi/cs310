@@ -5,7 +5,7 @@
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
 #SBATCH --mem=7G
-#SBATCH --time=0:40:00
+#SBATCH --time=18:00:00
 #
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=slurm_%j.out
@@ -15,5 +15,5 @@ source /etc/profile.d/modules.sh
 module load CUDA
 source ../../../venv/bin/activate
 # python3 -m pip install --upgrade -r ../../requirements.txt
-srun python3 -u shallow_gnn.py
+srun python3 -u gnn.py
 
