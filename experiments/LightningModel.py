@@ -11,10 +11,14 @@ class LightningModel(LightningModule):
         self,
         torch_model: torch.nn.Module,
         weight_decay: float,
+        remove_label_correlations: bool,
+        discard_conflicting_labels: bool,
     ):
         super().__init__()
         self.model = torch_model
         self.weight_decay = weight_decay
+        self.remove_label_correlations = remove_label_correlations
+        self.discard_conflicting_labels = discard_conflicting_labels
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -28,14 +32,22 @@ class LightningModel(LightningModule):
 
         # We drop ER-PR+ cases to avoid confusing the model
         er_labels_given_pr_pos = er_labels[(pr_labels == 1) & (er_labels == 1)]
-        er_labels_given_pr_neg = er_labels[pr_labels == 0]
-        pr_labels_given_er_pos = pr_labels[er_labels == 1]
         pr_labels_given_er_neg = pr_labels[(er_labels == 0) & (pr_labels == 0)]
+        if not self.discard_conflicting_labels:
+            er_labels_given_pr_neg = er_labels[pr_labels == 0]
+            pr_labels_given_er_pos = pr_labels[er_labels == 1]
+        else:
+            er_labels_given_pr_neg = er_labels[(er_labels == 0) & (pr_labels == 0)]
+            pr_labels_given_er_pos = pr_labels[(pr_labels == 1) & (er_labels == 1)]
 
         er_pred_given_pr_pos = er_pred[(pr_labels == 1) & (er_labels == 1)]
-        er_pred_given_pr_neg = er_pred[pr_labels == 0]
-        pr_pred_given_er_pos = pr_pred[er_labels == 1]
         pr_pred_given_er_neg = pr_pred[(er_labels == 0) & (pr_labels == 0)]
+        if not self.discard_conflicting_labels:
+            er_pred_given_pr_neg = er_pred[pr_labels == 0]
+            pr_pred_given_er_pos = pr_pred[er_labels == 1]
+        else:
+            er_pred_given_pr_neg = er_pred[(er_labels == 0) & (pr_labels == 0)]
+            pr_pred_given_er_pos = pr_pred[(pr_labels == 1) & (er_labels == 1)]
 
         # Oversampling in the BCE losses so positive and negative examples count equally
         er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
@@ -71,17 +83,36 @@ class LightningModel(LightningModule):
             )
         ).nan_to_num(0)
 
-        # Weight PR+, and PR- cases equally whereas if we had done
-        # one big call to BCE they would have been skewed by the uneven
-        # distribution of the PR label
+        if self.remove_label_correlations:
+            # If we had done one big call to BCE, these groups of terms would
+            # have been skewed by the uneven distribution of
+            # the other label, but here we weight them equally
+            er_pr_pos_scale = er_pr_neg_scale = pr_er_pos_scale = pr_er_neg_scale = 0.5
+        else:
+            # Exactly sample in proportion to the other label, as if we had done one big call to BCE
+            er_pr_pos_scale = len(er_labels_given_pr_pos) / (
+                len(er_labels_given_pr_pos) + len(er_labels_given_pr_neg)
+            )
+            er_pr_neg_scale = len(er_labels_given_pr_neg) / (
+                len(er_labels_given_pr_pos) + len(er_labels_given_pr_neg)
+            )
+            pr_er_pos_scale = len(pr_labels_given_er_pos) / (
+                len(pr_labels_given_er_pos) + len(pr_labels_given_er_neg)
+            )
+            pr_er_neg_scale = len(pr_labels_given_er_neg) / (
+                len(pr_labels_given_er_pos) + len(pr_labels_given_er_neg)
+            )
+
         batch_er_loss = (
-            0.5 * batch_er_loss_given_pr_pos + 0.5 * batch_er_loss_given_pr_neg
+            er_pr_pos_scale * batch_er_loss_given_pr_pos
+            + er_pr_neg_scale * batch_er_loss_given_pr_neg
         )
         # Weight ER+, and ER- cases equally whereas if we had done
         # one big call to BCE they would have been skewed by the uneven
         # distribution of the ER label
         batch_pr_loss = (
-            0.5 * batch_pr_loss_given_er_pos + 0.5 * batch_pr_loss_given_er_neg
+            pr_er_pos_scale * batch_pr_loss_given_er_pos
+            + pr_er_neg_scale * batch_pr_loss_given_er_neg
         )
 
         loss = batch_er_loss + batch_pr_loss

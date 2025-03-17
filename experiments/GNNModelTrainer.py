@@ -42,6 +42,8 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
+        remove_label_correlations: bool = True,
+        discard_conflicting_labels: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
         # Delete the file if it already exists
@@ -55,6 +57,8 @@ class GNNModelTrainer:
             model = LightningModel(
                 make_model(),
                 weight_decay,
+                remove_label_correlations,
+                discard_conflicting_labels,
             )
             early_stopping = EarlyStopping(monitor="val_loss", patience=20)
 
