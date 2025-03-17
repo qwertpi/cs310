@@ -1,5 +1,5 @@
 from __future__ import annotations
-import pickle
+from enum import Enum, auto
 from shutil import rmtree
 from time import time
 from typing import Callable
@@ -12,10 +12,8 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
 )
 from pytorch_lightning.loggers import CSVLogger
-from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 import torch
 
-from torch_geometric.data import Data  # type: ignore
 import torch_geometric.loader  # type: ignore
 
 from ModelEvaluator import (
@@ -23,21 +21,9 @@ from ModelEvaluator import (
     ER_POS_PREVALANCE,
     PR_POS_PREVALANCE,
 )
+from TorchDatasets import ABCTBDataset, Dataset, TCGADataset
 
 torch.set_float32_matmul_precision("medium")
-
-
-class Dataset(torch.utils.data.Dataset):
-    def __init__(self, data):
-        self.data = data
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        _, graph, labels = self.data[idx]
-        graph.y = torch.tensor(labels, dtype=torch.float).unsqueeze(0)
-        return graph
 
 
 class LightningModel(LightningModule):
@@ -194,18 +180,20 @@ class LightningModel(LightningModule):
         )
 
 
+class DataSource(Enum):
+    ABCTB = auto()
+    TCGA = auto()
+
+
 class GNNModelTrainer:
-    def __init__(self):
-        with open("../../../data/train_data.pkl", "rb") as f:
-            data: list[tuple[str, Data, tuple[bool, bool]]] = pickle.load(f)
-        self.dataset = Dataset(data)
-        self.groups: list[str] = []
-        self.y: list[tuple[bool, bool]] = []
-        self.y_compact: list[str] = []
-        for group, _, graph_label in data:
-            self.y_compact.append(str(int(graph_label[0])) + str(int(graph_label[1])))
-            self.y.append(graph_label)
-            self.groups.append(group)
+    def __init__(self, datasource: DataSource = DataSource.TCGA):
+        self.dataset: Dataset
+        if datasource is DataSource.TCGA:
+            self.dataset = TCGADataset()
+        elif datasource is DataSource.ABCTB:
+            self.dataset = ABCTBDataset()
+        else:
+            raise RuntimeError()
 
     def train_and_validate(
         self,
@@ -213,16 +201,14 @@ class GNNModelTrainer:
         model_name: str,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
-        NUM_FOLDS = 5
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
             f.write("")
-        evaluator = ModelEvaluator(NUM_FOLDS, open(f"{model_name}.metrics", "a"))
-        folds = StratifiedGroupKFold(n_splits=NUM_FOLDS, shuffle=True).split(
-            self.y_compact, self.y_compact, self.groups
-        )
+        evaluator = ModelEvaluator(5, open(f"{model_name}.metrics", "a"))
         batch_size = 1024
-        for fold_num, (train_idxs, validation_idxs) in enumerate(folds):
+        for fold_num, (train_idxs, validation_idxs) in enumerate(
+            self.dataset.get_folds()
+        ):
             model = LightningModel(
                 make_model(),
                 weight_decay,
@@ -247,7 +233,6 @@ class GNNModelTrainer:
                     train_loader = torch_geometric.loader.DataLoader(
                         torch.utils.data.Subset(self.dataset, train_idxs),
                         batch_size=batch_size,
-                        shuffle=True,
                     )
                     validation_loader = torch_geometric.loader.DataLoader(
                         torch.utils.data.Subset(self.dataset, validation_idxs),
@@ -267,7 +252,7 @@ class GNNModelTrainer:
                 or checkpoint is None
                 or validation_loader is None
             ):
-                return
+                raise RuntimeError()
 
             ckpt = torch.load(checkpoint.best_model_path)
             logs = pd.read_csv(f"logs/{model_name}/version_{fold_num}/metrics.csv")
