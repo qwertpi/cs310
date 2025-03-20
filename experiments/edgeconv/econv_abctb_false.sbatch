@@ -11,4 +11,4 @@
 source /etc/profile.d/modules.sh
 module load CUDA
 source ../../../venv/bin/activate
-srun python3 econv.py abtcb False
+srun python3 econv.py abctb False
