@@ -3,14 +3,15 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import sys
-from typing import Callable
+from typing import Callable, Literal
 
 sys.path.insert(0, "..")
 
+import click
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from GNNModelTrainer import GNNModelTrainer  # type: ignore
+from GNNModelTrainer import DataSource, GNNModelTrainer  # type: ignore
 
 
 class Subnet(torch.nn.Module, ABC):
@@ -28,19 +29,19 @@ class Subnet(torch.nn.Module, ABC):
 
 
 class InitialSubnet(Subnet):
-    def __init__(self):
-        super().__init__(1024, 1024, torch.nn.functional.gelu)
+    def __init__(self, feat_dim):
+        super().__init__(feat_dim, feat_dim, torch.nn.functional.gelu)
 
 
 class EdgeConvSubnet(Subnet):
-    def __init__(self):
-        super().__init__(2048, 1024, torch.nn.functional.elu)
+    def __init__(self, feat_dim):
+        super().__init__(2 * feat_dim, feat_dim, torch.nn.functional.elu)
 
 
 class PostProcessing(torch.nn.Module):
-    def __init__(self, output_dim: int):
+    def __init__(self, feat_dim, output_dim: int):
         super().__init__()
-        self.lin = torch_geometric.nn.Linear(1024, output_dim)
+        self.lin = torch_geometric.nn.Linear(feat_dim, output_dim)
         self.bn = torch.nn.BatchNorm1d(output_dim)
         self.dropout = torch.nn.Dropout(0.1)
 
@@ -52,50 +53,51 @@ class PostProcessing(torch.nn.Module):
 
 
 class SharedPostProcessing(PostProcessing):
-    def __init__(self):
-        super().__init__(2)
+    def __init__(self, feat_dim):
+        super().__init__(feat_dim, 2)
 
 
 class SingleReceptorPostProcessing(PostProcessing):
-    def __init__(self):
-        super().__init__(1)
+    def __init__(self, feat_dim):
+        super().__init__(feat_dim, 1)
 
 
 class Model(torch.nn.Module):
     def __init__(
         self,
+        feat_dim: int,
         num_initial_layers: int,
         num_middle_layers: int,
         num_receptor_specific_layers: int,
     ):
         super().__init__()
         self.shared_subblocks = torch.nn.ModuleList(
-            [InitialSubnet() for _ in range(num_initial_layers)]
+            [InitialSubnet(feat_dim) for _ in range(num_initial_layers)]
             + [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
                 for _ in range(num_middle_layers)
             ]
         )
         self.er_sublocks = torch.nn.ModuleList(
             [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
                 for _ in range(num_receptor_specific_layers)
             ]
         )
         self.pr_sublocks = torch.nn.ModuleList(
             [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
                 for _ in range(num_receptor_specific_layers)
             ]
         )
         self.shared_posts = torch.nn.ModuleList(
-            [SharedPostProcessing() for _ in self.shared_subblocks]
+            [SharedPostProcessing(feat_dim) for _ in self.shared_subblocks]
         )
         self.er_posts = torch.nn.ModuleList(
-            [SingleReceptorPostProcessing() for _ in self.er_sublocks]
+            [SingleReceptorPostProcessing(feat_dim) for _ in self.er_sublocks]
         )
         self.pr_posts = torch.nn.ModuleList(
-            [SingleReceptorPostProcessing() for _ in self.pr_sublocks]
+            [SingleReceptorPostProcessing(feat_dim) for _ in self.pr_sublocks]
         )
 
     def forward(self, x, edge_index, batch):
@@ -124,7 +126,22 @@ class Model(torch.nn.Module):
         return agg
 
 
+@click.command()
+@click.argument("dataset", type=click.Choice(["abctb", "tcga"]))
+@click.argument("rc", type=click.BOOL)
+def main(dataset: Literal["abctb", "tcga"], rc: bool):
+    if dataset == "abctb":
+        trainer = GNNModelTrainer(DataSource.ABCTB)
+        feat_dim = 1040
+    elif dataset == "tcga":
+        trainer = GNNModelTrainer(DataSource.TCGA)
+        feat_dim = 1024
+    else:
+        raise RuntimeError()
+    trainer.train_and_validate(
+        partial(Model, feat_dim, 1, 2, 0), f"econv_{dataset}_rc{rc}", rc
+    )
+
+
 if __name__ == "__main__":
-    trainer = GNNModelTrainer()
-    for cd in (False, True):
-        trainer.train_and_validate(partial(Model, 1, 3, 0), f"econv_cd_{cd}", cd)
+    main()

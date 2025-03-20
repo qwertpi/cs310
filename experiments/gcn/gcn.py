@@ -9,12 +9,12 @@ import torch_geometric.nn  # type: ignore
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
-
+FEAT_DIM = 1040
 class GCNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module):
         super().__init__()
-        self.conv = torch_geometric.nn.GCNConv(1024, 1024)
-        self.bn = torch.nn.BatchNorm1d(1024)
+        self.conv = torch_geometric.nn.GCNConv(FEAT_DIM, FEAT_DIM)
+        self.bn = torch.nn.BatchNorm1d(FEAT_DIM)
         self.act = act
 
     def forward(self, prev, x, edge_index):
@@ -25,7 +25,7 @@ class Model(torch.nn.Module):
     def __init__(self, num_blocks: int, act: torch.nn.Module):
         super().__init__()
         self.blocks = torch.nn.ModuleList([GCNBlock(act) for _ in range(num_blocks)])
-        self.readout = torch.nn.Linear(1024, 2)
+        self.readout = torch.nn.Linear(FEAT_DIM, 2)
 
     def forward(self, x, edge_index, batch):
         h = x

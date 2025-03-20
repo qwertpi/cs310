@@ -1,6 +1,5 @@
 from __future__ import annotations
 from enum import Enum, auto
-from shutil import rmtree
 from time import time
 from typing import Callable
 
@@ -29,12 +28,14 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.TCGA):
+    def __init__(self, datasource: DataSource = DataSource.ABCTB):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
+            self.batch_size = 32
         elif datasource is DataSource.ABCTB:
             self.dataset = ABCTBDataset()
+            self.batch_size = 2
         else:
             raise RuntimeError()
 
@@ -50,7 +51,6 @@ class GNNModelTrainer:
         with open(f"{model_name}.metrics", "w") as f:
             f.write("")
         evaluator = ModelEvaluator(5, open(f"{model_name}.metrics", "a"))
-        batch_size = 1024
         for fold_num, (train_idxs, validation_idxs) in enumerate(
             self.dataset.get_folds()
         ):
@@ -60,46 +60,28 @@ class GNNModelTrainer:
                 remove_label_correlations,
                 discard_conflicting_labels,
             )
-            early_stopping = EarlyStopping(monitor="val_loss", patience=20)
-
-            t0 = t1 = checkpoint = validation_loader = None
-            while batch_size > 1:
-                try:
-                    logger = CSVLogger(
-                        save_dir="logs", name=model_name, version=fold_num
-                    )
-                    checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
-                    trainer = Trainer(
-                        accelerator="gpu",
-                        accumulate_grad_batches=4096,  # i.e. all the batches
-                        callbacks=[checkpoint, early_stopping],
-                        enable_progress_bar=False,
-                        logger=logger,
-                        max_epochs=-1,
-                    )
-                    train_loader = torch_geometric.loader.DataLoader(
-                        torch.utils.data.Subset(self.dataset, train_idxs),
-                        batch_size=batch_size,
-                    )
-                    validation_loader = torch_geometric.loader.DataLoader(
-                        torch.utils.data.Subset(self.dataset, validation_idxs),
-                        batch_size=batch_size,
-                    )
-
-                    t0 = time()
-                    trainer.fit(model, train_loader, validation_loader)
-                    t1 = time()
-                    break
-                except torch.cuda.OutOfMemoryError:
-                    batch_size //= 2
-                    rmtree(f"logs/{model_name}/version_{fold_num}")
-            if (
-                t0 is None
-                or t1 is None
-                or checkpoint is None
-                or validation_loader is None
-            ):
-                raise RuntimeError()
+            early_stopping = EarlyStopping(monitor="val_loss")
+            logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
+            checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
+            trainer = Trainer(
+                accelerator="gpu",
+                accumulate_grad_batches=4096,  # i.e. all the batches
+                callbacks=[checkpoint, early_stopping],
+                enable_progress_bar=False,
+                logger=logger,
+                max_epochs=-1,
+            )
+            train_loader = torch_geometric.loader.DataLoader(
+                torch.utils.data.Subset(self.dataset, train_idxs),
+                batch_size=self.batch_size,
+            )
+            validation_loader = torch_geometric.loader.DataLoader(
+                torch.utils.data.Subset(self.dataset, validation_idxs),
+                batch_size=self.batch_size,
+            )
+            t0 = time()
+            trainer.fit(model, train_loader, validation_loader)
+            t1 = time()
 
             ckpt = torch.load(checkpoint.best_model_path)
             logs = pd.read_csv(f"logs/{model_name}/version_{fold_num}/metrics.csv")

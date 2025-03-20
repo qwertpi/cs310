@@ -3,7 +3,14 @@ from __future__ import annotations
 from pytorch_lightning import LightningModule
 import torch
 
-from ModelEvaluator import ER_POS_PREVALANCE, PR_POS_PREVALANCE
+from ModelEvaluator import (
+    ER_POS_GIVEN_PR_NEG_PREVALANCE,
+    ER_POS_GIVEN_PR_POS_PREVALANCE,
+    ER_POS_PREVALANCE,
+    PR_POS_GIVEN_ER_NEG_PREVALANCE,
+    PR_POS_GIVEN_ER_POS_PREVALANCE,
+    PR_POS_PREVALANCE,
+)
 
 
 class LightningModel(LightningModule):
@@ -27,93 +34,76 @@ class LightningModel(LightningModule):
         er_labels = batch.y[:, 0]
         pr_labels = batch.y[:, 1]
         out = self.model(batch.x, batch.edge_index, batch.batch)
-        er_pred = out[:, 0]
-        pr_pred = out[:, 1]
-
-        # We drop ER-PR+ cases to avoid confusing the model
-        er_labels_given_pr_pos = er_labels[(pr_labels == 1) & (er_labels == 1)]
-        pr_labels_given_er_neg = pr_labels[(er_labels == 0) & (pr_labels == 0)]
-        if not self.discard_conflicting_labels:
-            er_labels_given_pr_neg = er_labels[pr_labels == 0]
-            pr_labels_given_er_pos = pr_labels[er_labels == 1]
+        if self.discard_conflicting_labels:
+            mask = ((er_labels == 0) & (pr_labels == 0)) | (
+                (er_labels == 1) & (pr_labels == 1)
+            )
+        # In any case we drop ER-PR+ cases to avoid confusing the model as these may not really exist
         else:
-            er_labels_given_pr_neg = er_labels[(er_labels == 0) & (pr_labels == 0)]
-            pr_labels_given_er_pos = pr_labels[(pr_labels == 1) & (er_labels == 1)]
-
-        er_pred_given_pr_pos = er_pred[(pr_labels == 1) & (er_labels == 1)]
-        pr_pred_given_er_neg = pr_pred[(er_labels == 0) & (pr_labels == 0)]
-        if not self.discard_conflicting_labels:
-            er_pred_given_pr_neg = er_pred[pr_labels == 0]
-            pr_pred_given_er_pos = pr_pred[er_labels == 1]
-        else:
-            er_pred_given_pr_neg = er_pred[(er_labels == 0) & (pr_labels == 0)]
-            pr_pred_given_er_pos = pr_pred[(pr_labels == 1) & (er_labels == 1)]
-
-        # Oversampling in the BCE losses so positive and negative examples count equally
-        er_pos_weight = torch.tensor(ER_POS_PREVALANCE)
-        pr_pos_weight = torch.tensor(PR_POS_PREVALANCE)
-
-        batch_er_loss_given_pr_pos = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                er_pred_given_pr_pos,
-                er_labels_given_pr_pos,
-                pos_weight=er_pos_weight,
-            )
-        ).nan_to_num(0)
-        batch_er_loss_given_pr_neg = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                er_pred_given_pr_neg,
-                er_labels_given_pr_neg,
-                pos_weight=er_pos_weight,
-            )
-        ).nan_to_num(0)
-
-        batch_pr_loss_given_er_pos = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                pr_pred_given_er_pos,
-                pr_labels_given_er_pos,
-                pos_weight=pr_pos_weight,
-            )
-        ).nan_to_num(0)
-        batch_pr_loss_given_er_neg = (
-            torch.nn.functional.binary_cross_entropy_with_logits(
-                pr_pred_given_er_neg,
-                pr_labels_given_er_neg,
-                pos_weight=pr_pos_weight,
-            )
-        ).nan_to_num(0)
+            mask = [(er_labels == 1) | (pr_labels == 0)]
+        er_labels = er_labels[mask]
+        pr_labels = pr_labels[mask]
+        er_pred = out[:, 0][mask]
+        pr_pred = out[:, 1][mask]
 
         if self.remove_label_correlations:
-            # If we had done one big call to BCE, these groups of terms would
-            # have been skewed by the uneven distribution of
-            # the other label, but here we weight them equally
-            er_pr_pos_scale = er_pr_neg_scale = pr_er_pos_scale = pr_er_neg_scale = 0.5
-        else:
-            # Exactly sample in proportion to the other label, as if we had done one big call to BCE
-            er_pr_pos_scale = len(er_labels_given_pr_pos) / (
-                len(er_labels_given_pr_pos) + len(er_labels_given_pr_neg)
-            )
-            er_pr_neg_scale = len(er_labels_given_pr_neg) / (
-                len(er_labels_given_pr_pos) + len(er_labels_given_pr_neg)
-            )
-            pr_er_pos_scale = len(pr_labels_given_er_pos) / (
-                len(pr_labels_given_er_pos) + len(pr_labels_given_er_neg)
-            )
-            pr_er_neg_scale = len(pr_labels_given_er_neg) / (
-                len(pr_labels_given_er_pos) + len(pr_labels_given_er_neg)
-            )
+            er_labels_given_pr_pos = er_labels[(pr_labels == 1)]
+            er_labels_given_pr_neg = er_labels[(pr_labels == 0)]
+            pr_labels_given_er_pos = pr_labels[(er_labels == 1)]
+            pr_labels_given_er_neg = pr_labels[(er_labels == 0)]
 
-        batch_er_loss = (
-            er_pr_pos_scale * batch_er_loss_given_pr_pos
-            + er_pr_neg_scale * batch_er_loss_given_pr_neg
-        )
-        # Weight ER+, and ER- cases equally whereas if we had done
-        # one big call to BCE they would have been skewed by the uneven
-        # distribution of the ER label
-        batch_pr_loss = (
-            pr_er_pos_scale * batch_pr_loss_given_er_pos
-            + pr_er_neg_scale * batch_pr_loss_given_er_neg
-        )
+            er_pred_given_pr_pos = er_pred[(pr_labels == 1)]
+            er_pred_given_pr_neg = er_pred[(pr_labels == 0)]
+            pr_pred_given_er_pos = pr_pred[(er_labels == 1)]
+            pr_pred_given_er_neg = pr_pred[(er_labels == 0)]
+
+            batch_er_loss_given_pr_pos = (
+                torch.nn.functional.binary_cross_entropy_with_logits(
+                    er_pred_given_pr_pos,
+                    er_labels_given_pr_pos,
+                    pos_weight=torch.tensor(ER_POS_GIVEN_PR_POS_PREVALANCE),
+                )
+            ).nan_to_num(0)
+            batch_er_loss_given_pr_neg = (
+                torch.nn.functional.binary_cross_entropy_with_logits(
+                    er_pred_given_pr_neg,
+                    er_labels_given_pr_neg,
+                    pos_weight=torch.tensor(ER_POS_GIVEN_PR_NEG_PREVALANCE),
+                )
+            ).nan_to_num(0)
+
+            batch_pr_loss_given_er_pos = (
+                torch.nn.functional.binary_cross_entropy_with_logits(
+                    pr_pred_given_er_pos,
+                    pr_labels_given_er_pos,
+                    pos_weight=torch.tensor(PR_POS_GIVEN_ER_POS_PREVALANCE),
+                )
+            ).nan_to_num(0)
+            batch_pr_loss_given_er_neg = (
+                torch.nn.functional.binary_cross_entropy_with_logits(
+                    pr_pred_given_er_neg,
+                    pr_labels_given_er_neg,
+                    pos_weight=torch.tensor(PR_POS_GIVEN_ER_NEG_PREVALANCE),
+                )
+            ).nan_to_num(0)
+
+            batch_er_loss = (
+                batch_er_loss_given_pr_pos + batch_er_loss_given_pr_neg
+            ) / 2
+            batch_pr_loss = (
+                batch_pr_loss_given_er_pos + batch_pr_loss_given_er_neg
+            ) / 2
+        else:
+            batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                er_pred,
+                er_labels,
+                pos_weight=torch.tensor(ER_POS_PREVALANCE),
+            ).nan_to_num(0)
+            batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
+                pr_pred,
+                pr_labels,
+                pos_weight=torch.tensor(PR_POS_PREVALANCE),
+            ).nan_to_num(0)
 
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
