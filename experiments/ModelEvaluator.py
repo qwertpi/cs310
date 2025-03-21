@@ -1,6 +1,5 @@
 from __future__ import annotations
-from functools import partial
-from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar
+from typing import TYPE_CHECKING, Callable, ParamSpec, TextIO, TypeVar, cast
 
 from numpy.typing import NDArray
 
@@ -11,12 +10,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.metrics import (  # type: ignore
     auc,
-    average_precision_score,
     confusion_matrix,
     roc_auc_score,
     roc_curve,
 )
-import torch
 
 # ABCTB stats
 ER_POS_PREVALANCE = 2001 / 2538
@@ -100,12 +97,6 @@ def typed_auc_roc(x1: list[int], x2: list[float]) -> float:
     return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
 
 
-def typed_auc_pr(x1: list[int], x2: list[float]) -> float:
-    if len(set(x1)) < 2:
-        return float("nan")
-    return float_wrapper(average_precision_score)(x1, x2)  # type: ignore
-
-
 def fstify2a(f):
     def inner(x1, y1, x2, y2, **kwargs):
         return f(x1, y1, **kwargs)
@@ -120,15 +111,6 @@ def sndify2a(f):
     return inner
 
 
-def roc_labels_agree(
-    er_true: list[int], er_pred: list[float], pr_true: list[int], pr_pred: list[float]
-):
-    return typed_auc_roc(
-        [e == p for e, p in zip(er_true, pr_true)],
-        [e * p + (1 - e) * (1 - p) for e, p in zip(er_pred, pr_pred)],
-    )
-
-
 def erpr_confusion_matrix(
     er_true: list[int], er_pred: list[float], pr_true: list[int], pr_pred: list[float]
 ):
@@ -138,28 +120,6 @@ def erpr_confusion_matrix(
     return confusion_matrix(
         y_true_concat, y_pred_concat, labels=["00", "01", "10", "11"], normalize="true"
     )
-
-
-def point_usable_information(
-    true_labels: torch.Tensor, predictions: torch.Tensor, null_distribution: float
-):
-    model_entropy = torch.log2(
-        torch.where(true_labels == 1, predictions, 1 - predictions)
-    )
-    null_entropy = torch.log2(
-        torch.where(true_labels == 1, null_distribution, 1 - null_distribution)
-    )
-    return model_entropy - null_entropy
-
-
-def average_usable_information(
-    true_labels: list[int],
-    predictions: list[float],
-    null_distribution: float,
-):
-    return point_usable_information(
-        torch.tensor(true_labels), torch.tensor(predictions), null_distribution
-    ).mean()
 
 
 def scatter_plots(
@@ -223,22 +183,7 @@ class ModelEvaluator:
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
     ] = [
         ("AUC_ROC_ER", fstify2a(typed_auc_roc)),
-        ("AUC_PR_ER", fstify2a(typed_auc_pr)),
         ("AUC_ROC_PR", sndify2a(typed_auc_roc)),
-        ("AUC_PR_PR", sndify2a(typed_auc_pr)),
-        ("AUC_ROC_LABELSAGREE", roc_labels_agree),
-        (
-            "UI_ER",
-            fstify2a(
-                partial(average_usable_information, null_distribution=ER_POS_PREVALANCE)
-            ),
-        ),
-        (
-            "UI_PR",
-            sndify2a(
-                partial(average_usable_information, null_distribution=PR_POS_PREVALANCE)
-            ),
-        ),
     ]
     CONDITIONED_METRICS: list[
         tuple[
@@ -256,68 +201,12 @@ class ModelEvaluator:
         ]
     ] = [
         (
-            "AUC_ROC_ER|PR+",
-            condition_metric_wrapper(fstify2a(typed_auc_roc), is_pr_pos),
-        ),
-        (
             "AUC_ROC_ER|PR-",
             condition_metric_wrapper(fstify2a(typed_auc_roc), is_pr_neg),
         ),
         (
             "AUC_ROC_PR|ER+",
             condition_metric_wrapper(sndify2a(typed_auc_roc), is_er_pos),
-        ),
-        (
-            "AUC_ROC_PR|ER-",
-            condition_metric_wrapper(sndify2a(typed_auc_roc), is_er_neg),
-        ),
-        (
-            "UI_ER|PR+",
-            condition_metric_wrapper(
-                fstify2a(
-                    partial(
-                        average_usable_information,
-                        null_distribution=ER_POS_GIVEN_PR_POS_PREVALANCE,
-                    )
-                ),
-                is_pr_pos,
-            ),
-        ),
-        (
-            "UI_ER|PR-",
-            condition_metric_wrapper(
-                fstify2a(
-                    partial(
-                        average_usable_information,
-                        null_distribution=ER_POS_GIVEN_PR_NEG_PREVALANCE,
-                    )
-                ),
-                is_pr_neg,
-            ),
-        ),
-        (
-            "UI_PR|ER+",
-            condition_metric_wrapper(
-                sndify2a(
-                    partial(
-                        average_usable_information,
-                        null_distribution=PR_POS_GIVEN_ER_POS_PREVALANCE,
-                    )
-                ),
-                is_er_pos,
-            ),
-        ),
-        (
-            "UI_PR|ER-",
-            condition_metric_wrapper(
-                sndify2a(
-                    partial(
-                        average_usable_information,
-                        null_distribution=PR_POS_GIVEN_ER_NEG_PREVALANCE,
-                    )
-                ),
-                is_er_neg,
-            ),
         ),
     ]
     ALL_METRICS = METRICS + CONDITIONED_METRICS
@@ -362,12 +251,14 @@ class ModelEvaluator:
         # Based on: https://github.com/foxtrotmike/CS909/blob/master/evaluation_example.ipynb
         # Date acessed: 2025-03-04
         er_fpr, er_tpr, _ = typed_roc_curve(y_true_er, y_pred_er)
-        er_prneg_fpr, er_prneg_tpr, _ = condition_wrapper(typed_roc_curve, is_pr_neg)(
-            y_true, y_true_er, y_pred_er
+        er_prneg_fpr, er_prneg_tpr, _ = cast(
+            tuple[NDArray, NDArray, NDArray],
+            condition_wrapper(typed_roc_curve, is_pr_neg)(y_true, y_true_er, y_pred_er),
         )
         pr_fpr, pr_tpr, _ = typed_roc_curve(y_true_pr, y_pred_pr)
-        pr_erpos_fpr, pr_erpos_tpr, _ = condition_wrapper(typed_roc_curve, is_er_pos)(
-            y_true, y_true_pr, y_pred_pr
+        pr_erpos_fpr, pr_erpos_tpr, _ = cast(
+            tuple[NDArray, NDArray, NDArray],
+            condition_wrapper(typed_roc_curve, is_er_pos)(y_true, y_true_pr, y_pred_pr),
         )
 
         self.er_auc_rocs[self.fold_num] = auc(er_fpr, er_tpr)
