@@ -61,14 +61,20 @@ class LightningModel(LightningModule):
                 torch.nn.functional.binary_cross_entropy_with_logits(
                     er_pred_given_pr_pos,
                     er_labels_given_pr_pos,
-                    pos_weight=torch.tensor(ER_POS_GIVEN_PR_POS_PREVALANCE),
+                    pos_weight=torch.tensor(
+                        (1 - ER_POS_GIVEN_PR_POS_PREVALANCE)
+                        / ER_POS_GIVEN_PR_POS_PREVALANCE
+                    ),
                 )
             ).nan_to_num(0)
             batch_er_loss_given_pr_neg = (
                 torch.nn.functional.binary_cross_entropy_with_logits(
                     er_pred_given_pr_neg,
                     er_labels_given_pr_neg,
-                    pos_weight=torch.tensor(ER_POS_GIVEN_PR_NEG_PREVALANCE),
+                    pos_weight=torch.tensor(
+                        (1 - ER_POS_GIVEN_PR_NEG_PREVALANCE)
+                        / ER_POS_GIVEN_PR_NEG_PREVALANCE
+                    ),
                 )
             ).nan_to_num(0)
 
@@ -76,14 +82,20 @@ class LightningModel(LightningModule):
                 torch.nn.functional.binary_cross_entropy_with_logits(
                     pr_pred_given_er_pos,
                     pr_labels_given_er_pos,
-                    pos_weight=torch.tensor(PR_POS_GIVEN_ER_POS_PREVALANCE),
+                    pos_weight=torch.tensor(
+                        (1 - PR_POS_GIVEN_ER_POS_PREVALANCE)
+                        / PR_POS_GIVEN_ER_POS_PREVALANCE
+                    ),
                 )
             ).nan_to_num(0)
             batch_pr_loss_given_er_neg = (
                 torch.nn.functional.binary_cross_entropy_with_logits(
                     pr_pred_given_er_neg,
                     pr_labels_given_er_neg,
-                    pos_weight=torch.tensor(PR_POS_GIVEN_ER_NEG_PREVALANCE),
+                    pos_weight=torch.tensor(
+                        (1 - PR_POS_GIVEN_ER_NEG_PREVALANCE)
+                        / PR_POS_GIVEN_ER_NEG_PREVALANCE
+                    ),
                 )
             ).nan_to_num(0)
 
@@ -97,12 +109,14 @@ class LightningModel(LightningModule):
             batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
                 er_pred,
                 er_labels,
-                pos_weight=torch.tensor(ER_POS_PREVALANCE),
+                pos_weight=torch.tensor(
+                    (1 - ER_POS_PREVALANCE) / 1 - ER_POS_PREVALANCE
+                ),
             ).nan_to_num(0)
             batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
                 pr_pred,
                 pr_labels,
-                pos_weight=torch.tensor(PR_POS_PREVALANCE),
+                pos_weight=torch.tensor((1 - PR_POS_PREVALANCE) / PR_POS_PREVALANCE),
             ).nan_to_num(0)
 
         loss = batch_er_loss + batch_pr_loss
