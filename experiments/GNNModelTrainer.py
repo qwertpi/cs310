@@ -60,7 +60,7 @@ class GNNModelTrainer:
                 remove_label_correlations,
                 discard_conflicting_labels,
             )
-            early_stopping = EarlyStopping(monitor="val_loss")
+            early_stopping = EarlyStopping(monitor="val_loss", patience=10)
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
             checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
             trainer = Trainer(

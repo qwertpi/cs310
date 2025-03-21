@@ -1,5 +1,4 @@
 from functools import partial
-from math import log
 import sys
 
 sys.path.insert(0, "..")
@@ -11,12 +10,16 @@ import torch_geometric.nn  # type: ignore
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 FEAT_DIM = 1040
+
+
 class GATBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module, num_heads: int):
         super().__init__()
-        if not (FEAT_DIM/num_heads).is_integer():
+        if not (FEAT_DIM / num_heads).is_integer():
             raise ValueError
-        self.att = torch_geometric.nn.GATConv(FEAT_DIM, FEAT_DIM // num_heads, num_heads)
+        self.att = torch_geometric.nn.GATConv(
+            FEAT_DIM, FEAT_DIM // num_heads, num_heads
+        )
         self.bn = torch.nn.BatchNorm1d(FEAT_DIM)
         self.act = act
 

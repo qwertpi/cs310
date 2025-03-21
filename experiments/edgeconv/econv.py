@@ -3,15 +3,14 @@
 from abc import ABC, abstractmethod
 from functools import partial
 import sys
-from typing import Callable, Literal
+from typing import Callable
 
 sys.path.insert(0, "..")
 
-import click
 import torch
 import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
-from GNNModelTrainer import DataSource, GNNModelTrainer  # type: ignore
+from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class Subnet(torch.nn.Module, ABC):
@@ -126,22 +125,7 @@ class Model(torch.nn.Module):
         return agg
 
 
-@click.command()
-@click.argument("dataset", type=click.Choice(["abctb", "tcga"]))
-@click.argument("rc", type=click.BOOL)
-def main(dataset: Literal["abctb", "tcga"], rc: bool):
-    if dataset == "abctb":
-        trainer = GNNModelTrainer(DataSource.ABCTB)
-        feat_dim = 1040
-    elif dataset == "tcga":
-        trainer = GNNModelTrainer(DataSource.TCGA)
-        feat_dim = 1024
-    else:
-        raise RuntimeError()
-    trainer.train_and_validate(
-        partial(Model, feat_dim, 1, 2, 0), f"econv_{dataset}_rc{rc}", rc
-    )
-
-
 if __name__ == "__main__":
-    main()
+    trainer = GNNModelTrainer()
+    FEAT_DIM = 1040
+    trainer.train_and_validate(partial(Model, FEAT_DIM, 1, 2, 0), "econv")

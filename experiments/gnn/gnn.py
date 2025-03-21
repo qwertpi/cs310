@@ -10,6 +10,8 @@ import torch_geometric.nn  # type: ignore
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 FEAT_DIM = 1040
+
+
 class GNNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module):
         super().__init__()
