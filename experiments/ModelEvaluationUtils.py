@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, Callable, Optional, ParamSpec, TypeVar
 
 from numpy.typing import NDArray
 
@@ -13,12 +13,12 @@ from sklearn.metrics import (  # type: ignore
 )
 
 # ABCTB stats
-ER_POS_PREVALANCE = 2001 / 2538
-ER_POS_GIVEN_PR_POS_PREVALANCE = 1743 / 1792
-ER_POS_GIVEN_PR_NEG_PREVALANCE = 258 / 746
-PR_POS_PREVALANCE = 1792 / 2538
-PR_POS_GIVEN_ER_POS_PREVALANCE = 1743 / 2001
-PR_POS_GIVEN_ER_NEG_PREVALANCE = 49 / 537
+ER_POS_PROB = 2001 / 2538
+ER_POS_GIVEN_PR_POS_PROB = 1743 / 1792
+ER_POS_GIVEN_PR_NEG_PROB = 258 / 746
+PR_POS_PROB = 1792 / 2538
+PR_POS_GIVEN_ER_POS_PROB = 1743 / 2001
+PR_POS_GIVEN_ER_NEG_PROB = 49 / 537
 
 P = ParamSpec("P")
 
@@ -88,10 +88,27 @@ def typed_roc_curve(
     return roc_curve(true, pred)  # type: ignore
 
 
-def typed_auc_roc(x1: list[int], x2: list[float]) -> float:
+def typed_auc_roc_weighted(
+    x1: list[int], x2: list[float], weights: Optional[list[float]]
+) -> float:
     if len(set(x1)) < 2:
         return float("nan")
-    return float_wrapper(roc_auc_score)(x1, x2)  # type: ignore
+    return float_wrapper(roc_auc_score)(x1, x2, sample_weight=weights)  # type: ignore
+
+
+def typed_auc_roc(x1: list[int], x2: list[float]):
+    return typed_auc_roc_weighted(x1, x2, None)
+
+
+def balanced_auc_roc(
+    y_true: list[int],
+    y_score: list[float],
+    z_true: list[int],
+    z_score: list[float],
+    scale_pos: float,
+):
+    weights = [{1: 1 / scale_pos, 0: 1 / (1 - scale_pos)}[l] for l in z_true]
+    return typed_auc_roc_weighted(y_true, y_score, weights)
 
 
 def fstify2a(f):
@@ -104,6 +121,13 @@ def fstify2a(f):
 def sndify2a(f):
     def inner(x1, y1, x2, y2, **kwargs):
         return f(x2, y2, **kwargs)
+
+    return inner
+
+
+def flip2a(f):
+    def inner(x1, y1, x2, y2, **kwargs):
+        return f(x2, y2, x1, y1, **kwargs)
 
     return inner
 

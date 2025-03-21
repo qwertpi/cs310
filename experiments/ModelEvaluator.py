@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 from typing import Callable, TextIO, cast
 
 from numpy.typing import NDArray
@@ -10,10 +11,14 @@ from sklearn.metrics import (  # type: ignore
 )
 
 from ModelEvaluationUtils import (
+    ER_POS_PROB,
+    PR_POS_PROB,
+    balanced_auc_roc,
     condition_metric_wrapper,
     condition_wrapper,
     erpr_confusion_matrix,
     fstify2a,
+    flip2a,
     is_er_pos,
     is_pr_neg,
     sndify2a,
@@ -27,6 +32,14 @@ class ModelEvaluator:
         tuple[str, Callable[[list[int], list[float], list[int], list[float]], float]]
     ] = [
         ("AUC_ROC_ER", fstify2a(typed_auc_roc)),
+        (
+            "AUC_ROC_ER_BALANCED",
+            partial(balanced_auc_roc, scale_pos=PR_POS_PROB),
+        ),
+        (
+            "AUC_ROC_PR_BALANCED",
+            flip2a(partial(balanced_auc_roc, scale_pos=ER_POS_PROB)),
+        ),
         ("AUC_ROC_PR", sndify2a(typed_auc_roc)),
     ]
     CONDITIONED_METRICS: list[
