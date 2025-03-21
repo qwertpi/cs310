@@ -3,7 +3,7 @@ from __future__ import annotations
 from pytorch_lightning import LightningModule
 import torch
 
-from ModelEvaluator import (
+from ModelEvaluationUtils import (
     ER_POS_GIVEN_PR_NEG_PREVALANCE,
     ER_POS_GIVEN_PR_POS_PREVALANCE,
     ER_POS_PREVALANCE,
