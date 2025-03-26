@@ -45,6 +45,7 @@ class GNNModelTrainer:
         model_name: str,
         remove_label_correlations: bool = True,
         discard_conflicting_labels: bool = False,
+        spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
         # Delete the file if it already exists
@@ -59,6 +60,7 @@ class GNNModelTrainer:
                 weight_decay,
                 remove_label_correlations,
                 discard_conflicting_labels,
+                spectral_decoupling,
             )
             early_stopping = EarlyStopping(monitor="val_loss", patience=10)
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)

@@ -20,17 +20,33 @@ class LightningModel(LightningModule):
         weight_decay: float,
         remove_label_correlations: bool,
         discard_conflicting_labels: bool,
+        spectral_decoupling: bool,
     ):
         super().__init__()
         self.model = torch_model
         self.weight_decay = weight_decay
         self.remove_label_correlations = remove_label_correlations
         self.discard_conflicting_labels = discard_conflicting_labels
+        self.spectral_decoupling = spectral_decoupling
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
     def compute_losses(self, batch):
+        def _compute_subset_loss(pred, true, pos_prob):
+            zero = torch.tensor([0], device="cuda")
+            if pred.numel() == 0:
+                return zero
+            error = torch.nn.functional.binary_cross_entropy_with_logits(
+                pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
+            )
+            if self.spectral_decoupling:
+                confidences = torch.nn.functional.sigmoid(pred) - 0.5
+                penalty = (confidences**2).mean()
+            else:
+                penalty = zero
+            return error + 1e-3 * penalty
+
         er_labels = batch.y[:, 0]
         pr_labels = batch.y[:, 1]
         out = self.model(batch.x, batch.edge_index, batch.batch)
@@ -57,43 +73,18 @@ class LightningModel(LightningModule):
             pr_pred_given_er_pos = pr_pred[(er_labels == 1)]
             pr_pred_given_er_neg = pr_pred[(er_labels == 0)]
 
-            batch_er_loss_given_pr_pos = (
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    er_pred_given_pr_pos,
-                    er_labels_given_pr_pos,
-                    pos_weight=torch.tensor(
-                        (1 - ER_POS_GIVEN_PR_POS_PROB) / ER_POS_GIVEN_PR_POS_PROB
-                    ),
-                )
-            ).nan_to_num(0)
-            batch_er_loss_given_pr_neg = (
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    er_pred_given_pr_neg,
-                    er_labels_given_pr_neg,
-                    pos_weight=torch.tensor(
-                        (1 - ER_POS_GIVEN_PR_NEG_PROB) / ER_POS_GIVEN_PR_NEG_PROB
-                    ),
-                )
-            ).nan_to_num(0)
-
-            batch_pr_loss_given_er_pos = (
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    pr_pred_given_er_pos,
-                    pr_labels_given_er_pos,
-                    pos_weight=torch.tensor(
-                        (1 - PR_POS_GIVEN_ER_POS_PROB) / PR_POS_GIVEN_ER_POS_PROB
-                    ),
-                )
-            ).nan_to_num(0)
-            batch_pr_loss_given_er_neg = (
-                torch.nn.functional.binary_cross_entropy_with_logits(
-                    pr_pred_given_er_neg,
-                    pr_labels_given_er_neg,
-                    pos_weight=torch.tensor(
-                        (1 - PR_POS_GIVEN_ER_NEG_PROB) / PR_POS_GIVEN_ER_NEG_PROB
-                    ),
-                )
-            ).nan_to_num(0)
+            batch_er_loss_given_pr_pos = _compute_subset_loss(
+                er_pred_given_pr_pos, er_labels_given_pr_pos, ER_POS_GIVEN_PR_POS_PROB
+            )
+            batch_er_loss_given_pr_neg = _compute_subset_loss(
+                er_pred_given_pr_neg, er_labels_given_pr_neg, ER_POS_GIVEN_PR_NEG_PROB
+            )
+            batch_pr_loss_given_er_pos = _compute_subset_loss(
+                pr_pred_given_er_pos, pr_labels_given_er_pos, PR_POS_GIVEN_ER_POS_PROB
+            )
+            batch_pr_loss_given_er_neg = _compute_subset_loss(
+                pr_pred_given_er_neg, pr_labels_given_er_neg, PR_POS_GIVEN_ER_NEG_PROB
+            )
 
             batch_er_loss = (
                 batch_er_loss_given_pr_pos + batch_er_loss_given_pr_neg
@@ -102,16 +93,8 @@ class LightningModel(LightningModule):
                 batch_pr_loss_given_er_pos + batch_pr_loss_given_er_neg
             ) / 2
         else:
-            batch_er_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                er_pred,
-                er_labels,
-                pos_weight=torch.tensor((1 - ER_POS_PROB) / 1 - ER_POS_PROB),
-            ).nan_to_num(0)
-            batch_pr_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                pr_pred,
-                pr_labels,
-                pos_weight=torch.tensor((1 - PR_POS_PROB) / PR_POS_PROB),
-            ).nan_to_num(0)
+            batch_er_loss = _compute_subset_loss(er_pred, er_labels, ER_POS_PROB)
+            batch_pr_loss = _compute_subset_loss(pr_pred, pr_labels, PR_POS_PROB)
 
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
