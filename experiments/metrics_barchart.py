@@ -1,80 +1,75 @@
-# Used to create bar charts for presentation
+from itertools import chain
 
 import matplotlib.pyplot as plt
+import numpy as np
 
-plt.rcParams.update({"font.size": 14})
+plt.rcParams.update({"font.size": 12})
 
-models = ["Linear GNN", "GNN", "GCN", "GAT", "EdgeConv"]
-er_metrics = ["AUCROC(ER)", "AUCROC(ER|PR−)"]
-er_means = [
-    [0.838, 0.780],
-    [0.853, 0.768],
-    [0.863, 0.751],
-    [0.871, 0.773],
-    [0.880, 0.810],
-]
-er_stds = [
-    [0.042, 0.062],
-    [0.044, 0.090],
-    [0.019, 0.065],
-    [0.037, 0.054],
-    [0.023, 0.073],
-]
-pr_metrics = ["AUCROC(PR)", "AUCROC(PR|ER+)"]
-pr_means = [
-    [0.806, 0.674],
-    [0.786, 0.619],
-    [0.812, 0.672],
-    [0.828, 0.686],
-    [0.833, 0.723],
-]
-pr_stds = [
-    [0.038, 0.074],
-    [0.017, 0.092],
-    [0.026, 0.053],
-    [0.046, 0.108],
-    [0.059, 0.105],
-]
+models = ["Linear", "GNN", "GCN", "GAT", "EdgeConv"]
+er_metrics = ["AUCROC(ER)", "BALANCEDAUCROC(ER)", "AUCROC(ER|PR−)"]
+er_means = np.array(
+    [
+        [0.888, 0.878, 0.826],
+        [0.863, 0.854, 0.820],
+        [0.850, 0.842, 0.799],
+        [0.871, 0.863, 0.823],
+        [0.892, 0.884, 0.847],
+    ]
+)
+er_stds = np.array(
+    [
+        [0.012, 0.012, 0.028],
+        [0.037, 0.041, 0.053],
+        [0.018, 0.020, 0.034],
+        [0.012, 0.017, 0.036],
+        [0.013, 0.017, 0.036],
+    ]
+)
+pr_metrics = ["AUCROC(PR)", "BALANCEDAUCROC(PR)", "AUCROC(PR|ER+)"]
+pr_means = np.array(
+    [
+        [0.811, 0.852, 0.624],
+        [0.777, 0.815, 0.598],
+        [0.808, 0.853, 0.625],
+        [0.794, 0.840, 0.603],
+        [0.808, 0.849, 0.614],
+    ]
+)
+pr_stds = np.array(
+    [
+        [0.014, 0.018, 0.054],
+        [0.020, 0.033, 0.039],
+        [0.006, 0.015, 0.040],
+        [0.018, 0.018, 0.053],
+        [0.011, 0.022, 0.063],
+    ]
+)
 
 fig, ax = plt.subplots()
 y_pos = 2 * len(models) * (len(er_metrics) + len(pr_metrics))
 y_labels = {}
-color_pool = ["C0", "C1", "C9", "C4"]
-colors = {m: color_pool[i] for i, m in enumerate(er_metrics + pr_metrics)}
+# color_pool = ["C0", "C1", "C9", "C4"]
+color_pool = ["C0", "C1", "C9"]
+colors = {
+    m: color_pool[i % len(color_pool)] for i, m in enumerate(er_metrics + pr_metrics)
+}
 legend_data = {}
 
-for model, means, stds in zip(models, er_means, er_stds):
-    y_labels[y_pos] = model
-    for mean, std, metric in zip(means, stds, er_metrics):
+
+for means, stds, metric in chain(
+    zip(er_means.T, er_stds.T, er_metrics), zip(pr_means.T, pr_stds.T, pr_metrics)
+):
+    for model, mean, std in zip(models, means, stds):
+        y_labels[y_pos] = model
         bar = ax.barh(
             y_pos,
             mean,
-            height=1,
             label=metric,
             color=colors[metric],
             xerr=std,
             capsize=5,
         )
-        ax.text(0.51, bar[0].get_y() + 0.25, f"{mean:.3f}±{std:.3f}")
-        legend_data[metric] = bar
-        y_pos -= 1
-    y_pos -= 1
-
-y_pos -= 1
-
-for model, means, stds in zip(models, pr_means, pr_stds):
-    y_labels[y_pos] = model
-    for mean, std, metric in zip(means, stds, pr_metrics):
-        bar = ax.barh(
-            y_pos,
-            mean,
-            height=1,
-            label=metric,
-            color=colors[metric],
-            xerr=std,
-            capsize=5,
-        )
-        ax.text(0.51, bar[0].get_y() + 0.25, f"{mean:.3f}±{std:.3f}")
+        ax.text(0.51, bar[0].get_y() + 0.15, f"{mean:.3f}±{std:.3f}")
         legend_data[metric] = bar
         y_pos -= 1
     y_pos -= 1

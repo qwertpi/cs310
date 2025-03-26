@@ -2,7 +2,7 @@
 #
 #SBATCH --ntasks=1
 #SBATCH --job-name=lin-gnn
-#SBATCH --partition=eagle,falcon,gecko
+#SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
 #SBATCH --mem=50G
 #SBATCH --time=48:00:00
