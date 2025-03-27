@@ -28,7 +28,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.ABCTB):
+    def __init__(self, datasource: DataSource = DataSource.TCGA):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
@@ -62,7 +62,12 @@ class GNNModelTrainer:
                 discard_conflicting_labels,
                 spectral_decoupling,
             )
-            early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+            if isinstance(self.dataset, ABCTBDataset):
+                early_stopping = EarlyStopping(monitor="val_loss", patience=10)
+            if isinstance(self.dataset, TCGADataset):
+                early_stopping = EarlyStopping(monitor="val_loss", patience=30)
+            else:
+                raise RuntimeError()
             logger = CSVLogger(save_dir="logs", name=model_name, version=fold_num)
             checkpoint = ModelCheckpoint(monitor="val_loss", filename="best")
             trainer = Trainer(

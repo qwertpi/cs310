@@ -127,5 +127,5 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    FEAT_DIM = 1040
+    FEAT_DIM = 1024
     trainer.train_and_validate(partial(Model, FEAT_DIM, 1, 2, 0), "econv")

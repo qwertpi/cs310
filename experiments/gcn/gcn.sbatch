@@ -4,7 +4,7 @@
 #SBATCH --job-name=gcn
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
-#SBATCH --mem=50G
+#SBATCH --mem=8G
 #SBATCH --time=48:00:0
 #
 #SBATCH --mail-type=BEGIN,END,FAIL
