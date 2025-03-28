@@ -28,7 +28,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.TCGA):
+    def __init__(self, datasource: DataSource = DataSource.ABCTB):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
@@ -45,7 +45,7 @@ class GNNModelTrainer:
         model_name: str,
         remove_label_correlations: bool = False,
         discard_conflicting_labels: bool = False,
-        spectral_decoupling: bool = True,
+        spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
         # Delete the file if it already exists
@@ -64,7 +64,7 @@ class GNNModelTrainer:
             )
             if isinstance(self.dataset, ABCTBDataset):
                 early_stopping = EarlyStopping(monitor="val_loss", patience=10)
-            if isinstance(self.dataset, TCGADataset):
+            elif isinstance(self.dataset, TCGADataset):
                 early_stopping = EarlyStopping(monitor="val_loss", patience=30)
             else:
                 raise RuntimeError()

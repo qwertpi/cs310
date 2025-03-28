@@ -9,7 +9,7 @@ import torch_geometric.nn  # type: ignore
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
-FEAT_DIM = 1024
+FEAT_DIM = 1040
 
 
 class GNNBlock(torch.nn.Module):

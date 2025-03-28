@@ -34,9 +34,6 @@ class LightningModel(LightningModule):
 
     def compute_losses(self, batch):
         def _compute_subset_loss(pred, true, pos_prob):
-            zero = torch.tensor([0], device="cuda")
-            if pred.numel() == 0:
-                return zero
             error = torch.nn.functional.binary_cross_entropy_with_logits(
                 pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
             )
@@ -44,8 +41,8 @@ class LightningModel(LightningModule):
                 confidences = torch.nn.functional.sigmoid(pred) - 0.5
                 penalty = (confidences**2).mean()
             else:
-                penalty = zero
-            return error + 1e-3 * penalty
+                penalty = 0
+            return (error + 1e-3 * penalty).nan_to_num(0)
 
         er_labels = batch.y[:, 0]
         pr_labels = batch.y[:, 1]
