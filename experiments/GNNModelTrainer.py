@@ -45,7 +45,7 @@ class GNNModelTrainer:
         model_name: str,
         remove_label_correlations: bool = False,
         discard_conflicting_labels: bool = False,
-        spectral_decoupling: bool = False,
+        spectral_decoupling: bool = True,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
         # Delete the file if it already exists
