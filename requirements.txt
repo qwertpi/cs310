@@ -19,4 +19,3 @@ torch_geometric==2.6.1
 torch-scatter==2.1.2
 torchvision==0.16.2
 wheel==0.45.1
-xgboost==2.1.2
