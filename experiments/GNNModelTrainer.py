@@ -1,5 +1,6 @@
 from __future__ import annotations
 from enum import Enum, auto
+from math import log10
 from time import time
 from typing import Callable
 
@@ -28,7 +29,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.ABCTB):
+    def __init__(self, datasource: DataSource = DataSource.TCGA):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
@@ -43,11 +44,16 @@ class GNNModelTrainer:
         self,
         make_model: Callable[[], torch.nn.Module],
         model_name: str,
+        penalty_weight_er: float,
+        penalty_weight_pr: float,
         remove_label_correlations: bool = False,
         discard_conflicting_labels: bool = False,
-        spectral_decoupling: bool = False,
+        spectral_decoupling: bool = True,
         weight_decay: float = 1e-2,  # AdamW's default value
     ):
+        model_name = (
+            f"{model_name}_sd_e{log10(penalty_weight_er)}_p{log10(penalty_weight_pr)}"
+        )
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
             f.write("")
@@ -61,6 +67,8 @@ class GNNModelTrainer:
                 remove_label_correlations,
                 discard_conflicting_labels,
                 spectral_decoupling,
+                penalty_weight_er,
+                penalty_weight_pr,
             )
             if isinstance(self.dataset, ABCTBDataset):
                 early_stopping = EarlyStopping(monitor="val_loss", patience=10)

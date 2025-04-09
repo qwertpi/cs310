@@ -8,8 +8,9 @@ from typing import Callable
 sys.path.insert(0, "..")
 
 import torch
-import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
+
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
@@ -127,5 +128,21 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    FEAT_DIM = 1040
-    trainer.train_and_validate(partial(Model, FEAT_DIM, 1, 2, 0), "econv")
+    FEAT_DIM = 1024
+    for sd_er, sd_pr in tqdm(
+        [
+            (1e0, 1e0),
+            (1e0, 1e-2),
+            (1e-2, 1e0),
+            (1e-2, 1e-2),
+            (1e-2, 1e-4),
+            (1e-4, 1e-2),
+            (1e-4, 1e-4),
+            (1e-4, 1e-6),
+            (1e-6, 1e-4),
+            (1e-6, 1e-6),
+        ]
+    ):
+        trainer.train_and_validate(
+            partial(Model, FEAT_DIM, 1, 2, 0), "econv", sd_er, sd_pr
+        )

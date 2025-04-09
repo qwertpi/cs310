@@ -1,4 +1,5 @@
 from __future__ import annotations
+from functools import partial
 
 from pytorch_lightning import LightningModule
 import torch
@@ -21,19 +22,25 @@ class LightningModel(LightningModule):
         remove_label_correlations: bool,
         discard_conflicting_labels: bool,
         spectral_decoupling: bool,
+        penalty_weight_er: float,
+        penalty_weight_pr: float,
     ):
         super().__init__()
         self.model = torch_model
-        self.weight_decay = weight_decay
+        self.weight_decay = weight_decay if not spectral_decoupling else 0
         self.remove_label_correlations = remove_label_correlations
         self.discard_conflicting_labels = discard_conflicting_labels
         self.spectral_decoupling = spectral_decoupling
+        self.penalty_weight_er = penalty_weight_er
+        self.penalty_weight_pr = penalty_weight_pr
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
 
     def compute_losses(self, batch):
-        def _compute_subset_loss(pred, true, pos_prob):
+        def _compute_subset_loss(
+            is_er: bool, pred: torch.Tensor, true: torch.Tensor, pos_prob: float
+        ):
             error = torch.nn.functional.binary_cross_entropy_with_logits(
                 pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
             )
@@ -41,7 +48,11 @@ class LightningModel(LightningModule):
                 penalty = (pred**2).mean()
             else:
                 penalty = 0
-            return (error + 1e-3 * penalty).nan_to_num(0)
+            penalty_weight = [self.penalty_weight_pr, self.penalty_weight_er][is_er]
+            return (error + penalty_weight * penalty).nan_to_num(0)
+
+        _compute_subset_loss_er = partial(_compute_subset_loss, True)
+        _compute_subset_loss_pr = partial(_compute_subset_loss, False)
 
         er_labels = batch.y[:, 0]
         pr_labels = batch.y[:, 1]
@@ -50,7 +61,8 @@ class LightningModel(LightningModule):
             mask = ((er_labels == 0) & (pr_labels == 0)) | (
                 (er_labels == 1) & (pr_labels == 1)
             )
-        # In any case we drop ER-PR+ cases to avoid confusing the model as these may not really exist
+        # In any case we drop ER-PR+ cases to avoid confusing the model
+        # as these may not really exist
         else:
             mask = [(er_labels == 1) | (pr_labels == 0)]
         er_labels = er_labels[mask]
@@ -69,16 +81,16 @@ class LightningModel(LightningModule):
             pr_pred_given_er_pos = pr_pred[(er_labels == 1)]
             pr_pred_given_er_neg = pr_pred[(er_labels == 0)]
 
-            batch_er_loss_given_pr_pos = _compute_subset_loss(
+            batch_er_loss_given_pr_pos = _compute_subset_loss_er(
                 er_pred_given_pr_pos, er_labels_given_pr_pos, ER_POS_GIVEN_PR_POS_PROB
             )
-            batch_er_loss_given_pr_neg = _compute_subset_loss(
+            batch_er_loss_given_pr_neg = _compute_subset_loss_er(
                 er_pred_given_pr_neg, er_labels_given_pr_neg, ER_POS_GIVEN_PR_NEG_PROB
             )
-            batch_pr_loss_given_er_pos = _compute_subset_loss(
+            batch_pr_loss_given_er_pos = _compute_subset_loss_pr(
                 pr_pred_given_er_pos, pr_labels_given_er_pos, PR_POS_GIVEN_ER_POS_PROB
             )
-            batch_pr_loss_given_er_neg = _compute_subset_loss(
+            batch_pr_loss_given_er_neg = _compute_subset_loss_pr(
                 pr_pred_given_er_neg, pr_labels_given_er_neg, PR_POS_GIVEN_ER_NEG_PROB
             )
 
@@ -89,8 +101,8 @@ class LightningModel(LightningModule):
                 batch_pr_loss_given_er_pos + batch_pr_loss_given_er_neg
             ) / 2
         else:
-            batch_er_loss = _compute_subset_loss(er_pred, er_labels, ER_POS_PROB)
-            batch_pr_loss = _compute_subset_loss(pr_pred, pr_labels, PR_POS_PROB)
+            batch_er_loss = _compute_subset_loss_er(er_pred, er_labels, ER_POS_PROB)
+            batch_pr_loss = _compute_subset_loss_pr(pr_pred, pr_labels, PR_POS_PROB)
 
         loss = batch_er_loss + batch_pr_loss
         return batch_er_loss, batch_pr_loss, loss
