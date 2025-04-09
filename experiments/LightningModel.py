@@ -38,8 +38,7 @@ class LightningModel(LightningModule):
                 pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
             )
             if self.spectral_decoupling:
-                confidences = torch.nn.functional.sigmoid(pred) - 0.5
-                penalty = (confidences**2).mean()
+                penalty = (pred**2).mean()
             else:
                 penalty = 0
             return (error + 1e-3 * penalty).nan_to_num(0)
