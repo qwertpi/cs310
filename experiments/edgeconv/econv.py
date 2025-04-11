@@ -9,7 +9,7 @@ sys.path.insert(0, "..")
 
 import torch
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
+from tqdm.contrib.itertools import product as tqdm_product
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -129,19 +129,9 @@ class Model(torch.nn.Module):
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
     FEAT_DIM = 1024
-    for sd_er, sd_pr in tqdm(
-        [
-            (1e0, 1e0),
-            (1e0, 1e-2),
-            (1e-2, 1e0),
-            (1e-2, 1e-2),
-            (1e-2, 1e-4),
-            (1e-4, 1e-2),
-            (1e-4, 1e-4),
-            (1e-4, 1e-6),
-            (1e-6, 1e-4),
-            (1e-6, 1e-6),
-        ]
+    for sd_er, sd_pr in tqdm_product(
+        [1e-3, 3e-4, 6e-4, 1e-4, 6e-5, 3e-5, 1e-5],
+        [1e-3, 3e-4, 6e-4, 1e-4, 6e-5, 3e-5, 1e-5],
     ):
         trainer.train_and_validate(
             partial(Model, FEAT_DIM, 1, 2, 0), "econv", sd_er, sd_pr
