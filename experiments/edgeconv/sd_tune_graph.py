@@ -38,14 +38,18 @@ for path in glob.glob("econv_sd*.metrics"):
                 metrics[metric].append(float(split_line[1]))
 
 fig = plt.figure()
-for i, (metric_name, means) in enumerate(metrics.items(), start=1):
-    x, y = np.meshgrid(np.unique(er_weights), np.unique(pr_weights))
-    z = np.full_like(x, np.nan, dtype=float)
-    for er_w, pr_w, mean in zip(er_weights, pr_weights, means):
-        z[np.where(np.logical_and(x == er_w, y == pr_w))] = mean
-    ax = fig.add_subplot(2, 3, i, projection="3d")
-    ax.plot_surface(x, y, z, cmap="viridis")  # type: ignore
-    ax.set_xlabel("log_10(er_weight)")
-    ax.set_ylabel("log_10(pr_weight)")
-    ax.set_title(metric_name)
+means = [
+    (m1 + m2) / 2
+    for m1, m2 in zip(metrics["AUC_ROC_ER|PR-"], metrics["AUC_ROC_PR|ER+"])
+]
+# for i, (metric_name, means) in enumerate(metrics.items(), start=1):
+x, y = np.meshgrid(np.unique(er_weights), np.unique(pr_weights))
+z = np.full_like(x, np.nan, dtype=float)
+for er_w, pr_w, mean in zip(er_weights, pr_weights, means):
+    z[np.where(np.logical_and(x == er_w, y == pr_w))] = mean
+ax = fig.add_subplot(1, 1, 1, projection="3d")
+ax.plot_surface(x, y, z, cmap="viridis")  # type: ignore
+ax.set_xlabel("log_10(er_weight)")
+ax.set_ylabel("log_10(pr_weight)")
+ax.set_title("((AUC_ROC_ER|PR-)+(AUC_ROC_PR|ER+))/2")
 plt.show()
