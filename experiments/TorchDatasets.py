@@ -34,6 +34,11 @@ class Dataset(torch.utils.data.Dataset, ABC):
             folds.append((train_idxs, val_idxs))
         return folds
 
+    @staticmethod
+    @abstractmethod
+    def get_feat_dim() -> int:
+        pass
+
 
 class TCGADataset(Dataset):
     def __init__(self):
@@ -47,6 +52,10 @@ class TCGADataset(Dataset):
 
     def __getitem__(self, idx):
         return self.graphs[idx]
+
+    @staticmethod
+    def get_feat_dim():
+        return 1024
 
 
 class ABCTBDataset(Dataset):
@@ -75,3 +84,7 @@ class ABCTBDataset(Dataset):
                 self.cached_data = pickle.load(f)
         graph = self.cached_data[idx - acc]
         return graph
+
+    @staticmethod
+    def get_feat_dim():
+        return 1040

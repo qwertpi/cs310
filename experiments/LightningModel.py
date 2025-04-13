@@ -1,5 +1,6 @@
 from __future__ import annotations
 from functools import partial
+from typing import Optional
 
 from pytorch_lightning import LightningModule
 import torch
@@ -22,8 +23,8 @@ class LightningModel(LightningModule):
         remove_label_correlations: bool,
         discard_conflicting_labels: bool,
         spectral_decoupling: bool,
-        penalty_weight_er: float,
-        penalty_weight_pr: float,
+        penalty_weight_er: Optional[float],
+        penalty_weight_pr: Optional[float],
     ):
         super().__init__()
         self.model = torch_model
@@ -41,6 +42,7 @@ class LightningModel(LightningModule):
         def _compute_subset_loss(
             is_er: bool, pred: torch.Tensor, true: torch.Tensor, pos_prob: float
         ):
+            penalty_weight = [self.penalty_weight_pr, self.penalty_weight_er][is_er]
             error = torch.nn.functional.binary_cross_entropy_with_logits(
                 pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
             )
@@ -48,7 +50,11 @@ class LightningModel(LightningModule):
                 penalty = (pred**2).mean()
             else:
                 penalty = 0
-            penalty_weight = [self.penalty_weight_pr, self.penalty_weight_er][is_er]
+                penalty_weight = 0
+            if penalty_weight is None:
+                raise ValueError(
+                    "Penalty weights must be given if a penalty based invariance is used"
+                )
             return (error + penalty_weight * penalty).nan_to_num(0)
 
         _compute_subset_loss_er = partial(_compute_subset_loss, True)

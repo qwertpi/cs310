@@ -4,23 +4,21 @@ import sys
 sys.path.insert(0, "..")
 
 import torch
-import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
-FEAT_DIM = 1040
-
 
 class GATBlock(torch.nn.Module):
-    def __init__(self, act: torch.nn.Module, num_heads: int):
+    def __init__(self, act: torch.nn.Module, num_heads: int, feat_dim: int):
         super().__init__()
-        if not (FEAT_DIM / num_heads).is_integer():
+        if not (feat_dim / num_heads).is_integer():
             raise ValueError
         self.att = torch_geometric.nn.GATConv(
-            FEAT_DIM, FEAT_DIM // num_heads, num_heads
+            feat_dim, feat_dim // num_heads, num_heads
         )
-        self.bn = torch.nn.BatchNorm1d(FEAT_DIM)
+        self.bn = torch.nn.BatchNorm1d(feat_dim)
         self.act = act
 
     def forward(self, prev, x, edge_index):
@@ -28,12 +26,14 @@ class GATBlock(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self, num_blocks: int, num_heads: int, act: torch.nn.Module):
+    def __init__(
+        self, num_blocks: int, num_heads: int, act: torch.nn.Module, feat_dim: int
+    ):
         super().__init__()
         self.blocks = torch.nn.ModuleList(
-            [GATBlock(act, num_heads) for _ in range(num_blocks)]
+            [GATBlock(act, num_heads, feat_dim) for _ in range(num_blocks)]
         )
-        self.readout = torch.nn.Linear(FEAT_DIM, 2)
+        self.readout = torch.nn.Linear(feat_dim, 2)
 
     def forward(self, x, edge_index, batch):
         h = x
@@ -49,7 +49,9 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(
-        partial(Model, 3, 8, torch.nn.ELU()),
-        "gat",
-    )
+    # The only common factors of 1024 and 1040
+    for head_count in tqdm([1, 2, 4, 8, 16]):
+        trainer.train_and_validate(
+            partial(Model, 3, head_count, torch.nn.ELU()),
+            f"gat_h{head_count}",
+        )

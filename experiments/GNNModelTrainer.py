@@ -1,8 +1,7 @@
 from __future__ import annotations
 from enum import Enum, auto
-from math import log10
 from time import time
-from typing import Callable
+from typing import Callable, Optional
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -42,18 +41,15 @@ class GNNModelTrainer:
 
     def train_and_validate(
         self,
-        make_model: Callable[[], torch.nn.Module],
+        make_model: Callable[[int], torch.nn.Module],
         model_name: str,
-        penalty_weight_er: float,
-        penalty_weight_pr: float,
         remove_label_correlations: bool = False,
         discard_conflicting_labels: bool = False,
-        spectral_decoupling: bool = True,
+        spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
+        penalty_weight_er: Optional[float] = None,
+        penalty_weight_pr: Optional[float] = None,
     ):
-        model_name = (
-            f"{model_name}_sd_e{log10(penalty_weight_er)}_p{log10(penalty_weight_pr)}"
-        )
         # Delete the file if it already exists
         with open(f"{model_name}.metrics", "w") as f:
             f.write("")
@@ -62,7 +58,7 @@ class GNNModelTrainer:
             self.dataset.get_folds()
         ):
             model = LightningModel(
-                make_model(),
+                make_model(self.dataset.get_feat_dim()),
                 weight_decay,
                 remove_label_correlations,
                 discard_conflicting_labels,
