@@ -4,19 +4,17 @@ import sys
 sys.path.insert(0, "..")
 
 import torch
-import torch_geometric.loader  # type: ignore
 import torch_geometric.nn  # type: ignore
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
-FEAT_DIM = 1040
-
 
 class GNNBlock(torch.nn.Module):
-    def __init__(self, act: torch.nn.Module):
+    def __init__(self, act: torch.nn.Module, feat_dim: int):
         super().__init__()
-        self.lin = torch_geometric.nn.Linear(FEAT_DIM, FEAT_DIM)
-        self.bn = torch.nn.BatchNorm1d(FEAT_DIM)
+        self.lin = torch_geometric.nn.Linear(feat_dim, feat_dim)
+        self.bn = torch.nn.BatchNorm1d(feat_dim)
         self.act = act
 
     def forward(self, x):
@@ -24,10 +22,14 @@ class GNNBlock(torch.nn.Module):
 
 
 class Model(torch.nn.Module):
-    def __init__(self, num_blocks: int, act: torch.nn.Module):
+    def __init__(
+        self, num_blocks: int, feat_dim: int, act: torch.nn.Module = torch.nn.ELU()
+    ):
         super().__init__()
-        self.blocks = torch.nn.ModuleList([GNNBlock(act) for _ in range(num_blocks)])
-        self.readout = torch.nn.Linear(FEAT_DIM, 2)
+        self.blocks = torch.nn.ModuleList(
+            [GNNBlock(act, feat_dim) for _ in range(num_blocks)]
+        )
+        self.readout = torch.nn.Linear(feat_dim, 2)
 
     def forward(self, x, edge_index, batch):
         h = x
@@ -40,4 +42,8 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    trainer.train_and_validate(partial(Model, 1, torch.nn.ELU()), "gnn")
+    for depth in tqdm([1, 2, 3, 4, 5, 6]):
+        trainer.train_and_validate(
+            partial(Model, depth),
+            f"gnn_d{depth}",
+        )

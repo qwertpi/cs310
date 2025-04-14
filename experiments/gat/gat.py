@@ -27,7 +27,11 @@ class GATBlock(torch.nn.Module):
 
 class Model(torch.nn.Module):
     def __init__(
-        self, num_blocks: int, num_heads: int, act: torch.nn.Module, feat_dim: int
+        self,
+        num_blocks: int,
+        feat_dim: int,
+        num_heads: int = 8,
+        act: torch.nn.Module = torch.nn.ELU(),
     ):
         super().__init__()
         self.blocks = torch.nn.ModuleList(
@@ -49,9 +53,8 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    # The only common factors of 1024 and 1040
-    for head_count in tqdm([1, 2, 4, 8, 16]):
+    for depth in tqdm([1, 2, 3, 4, 5, 6]):
         trainer.train_and_validate(
-            partial(Model, 3, head_count, torch.nn.ELU()),
-            f"gat_h{head_count}",
+            partial(Model, depth),
+            f"gat_d{depth}",
         )

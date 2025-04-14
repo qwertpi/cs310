@@ -4,8 +4,8 @@
 #SBATCH --job-name=gat
 #SBATCH --partition=falcon,gecko
 #SBATCH --gres=gpu:1
-#SBATCH --mem=50G
-#SBATCH --time=48:00:0
+#SBATCH --mem=8G
+#SBATCH --time=24:00:0
 #
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --output=slurm_%j.out

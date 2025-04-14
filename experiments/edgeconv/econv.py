@@ -9,7 +9,7 @@ sys.path.insert(0, "..")
 
 import torch
 import torch_geometric.nn  # type: ignore
-from tqdm.contrib.itertools import product as tqdm_product
+from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -29,17 +29,17 @@ class Subnet(torch.nn.Module, ABC):
 
 
 class InitialSubnet(Subnet):
-    def __init__(self, feat_dim):
+    def __init__(self, feat_dim: int):
         super().__init__(feat_dim, feat_dim, torch.nn.functional.gelu)
 
 
 class EdgeConvSubnet(Subnet):
-    def __init__(self, feat_dim):
+    def __init__(self, feat_dim: int):
         super().__init__(2 * feat_dim, feat_dim, torch.nn.functional.elu)
 
 
 class PostProcessing(torch.nn.Module):
-    def __init__(self, feat_dim, output_dim: int):
+    def __init__(self, feat_dim: int, output_dim: int):
         super().__init__()
         self.lin = torch_geometric.nn.Linear(feat_dim, output_dim)
         self.bn = torch.nn.BatchNorm1d(output_dim)
@@ -53,22 +53,22 @@ class PostProcessing(torch.nn.Module):
 
 
 class SharedPostProcessing(PostProcessing):
-    def __init__(self, feat_dim):
+    def __init__(self, feat_dim: int):
         super().__init__(feat_dim, 2)
 
 
 class SingleReceptorPostProcessing(PostProcessing):
-    def __init__(self, feat_dim):
+    def __init__(self, feat_dim: int):
         super().__init__(feat_dim, 1)
 
 
 class Model(torch.nn.Module):
     def __init__(
         self,
-        feat_dim: int,
-        num_initial_layers: int,
         num_middle_layers: int,
-        num_receptor_specific_layers: int,
+        feat_dim: int,
+        num_initial_layers: int = 1,
+        num_receptor_specific_layers: int = 0,
     ):
         super().__init__()
         self.shared_subblocks = torch.nn.ModuleList(
@@ -128,11 +128,5 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    FEAT_DIM = 1024
-    for sd_er, sd_pr in tqdm_product(
-        [1e-3, 3e-4, 6e-4, 1e-4, 6e-5, 3e-5, 1e-5],
-        [1e-3, 3e-4, 6e-4, 1e-4, 6e-5, 3e-5, 1e-5],
-    ):
-        trainer.train_and_validate(
-            partial(Model, FEAT_DIM, 1, 2, 0), "econv", sd_er, sd_pr
-        )
+    for depth in tqdm([1, 2, 3, 4, 5, 6]):
+        trainer.train_and_validate(partial(Model, depth - 1), f"econv_d{depth}")
