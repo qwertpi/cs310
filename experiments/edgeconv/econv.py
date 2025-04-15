@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from functools import partial
+from math import log2
 import sys
 from typing import Callable
 
@@ -29,19 +30,19 @@ class Subnet(torch.nn.Module, ABC):
 
 
 class InitialSubnet(Subnet):
-    def __init__(self, feat_dim: int):
-        super().__init__(feat_dim, feat_dim, torch.nn.functional.gelu)
+    def __init__(self, feat_dim: int, internal_dim: int):
+        super().__init__(feat_dim, internal_dim, torch.nn.functional.gelu)
 
 
 class EdgeConvSubnet(Subnet):
-    def __init__(self, feat_dim: int):
-        super().__init__(2 * feat_dim, feat_dim, torch.nn.functional.elu)
+    def __init__(self, internal_dim: int):
+        super().__init__(2 * internal_dim, internal_dim, torch.nn.functional.elu)
 
 
 class PostProcessing(torch.nn.Module):
-    def __init__(self, feat_dim: int, output_dim: int):
+    def __init__(self, internal_dim: int, output_dim: int):
         super().__init__()
-        self.lin = torch_geometric.nn.Linear(feat_dim, output_dim)
+        self.lin = torch_geometric.nn.Linear(internal_dim, output_dim)
         self.bn = torch.nn.BatchNorm1d(output_dim)
         self.dropout = torch.nn.Dropout(0.1)
 
@@ -53,51 +54,51 @@ class PostProcessing(torch.nn.Module):
 
 
 class SharedPostProcessing(PostProcessing):
-    def __init__(self, feat_dim: int):
-        super().__init__(feat_dim, 2)
+    def __init__(self, internal_dim: int):
+        super().__init__(internal_dim, 2)
 
 
 class SingleReceptorPostProcessing(PostProcessing):
-    def __init__(self, feat_dim: int):
-        super().__init__(feat_dim, 1)
+    def __init__(self, internal_dim: int):
+        super().__init__(internal_dim, 1)
 
 
 class Model(torch.nn.Module):
     def __init__(
         self,
-        num_middle_layers: int,
+        internal_dim: int,
         feat_dim: int,
-        num_initial_layers: int = 1,
+        num_middle_layers: int = 2,
         num_receptor_specific_layers: int = 0,
     ):
         super().__init__()
         self.shared_subblocks = torch.nn.ModuleList(
-            [InitialSubnet(feat_dim) for _ in range(num_initial_layers)]
+            [InitialSubnet(feat_dim, internal_dim)]
             + [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(internal_dim), aggr="max")
                 for _ in range(num_middle_layers)
             ]
         )
         self.er_sublocks = torch.nn.ModuleList(
             [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(internal_dim), aggr="max")
                 for _ in range(num_receptor_specific_layers)
             ]
         )
         self.pr_sublocks = torch.nn.ModuleList(
             [
-                torch_geometric.nn.EdgeConv(EdgeConvSubnet(feat_dim), aggr="max")
+                torch_geometric.nn.EdgeConv(EdgeConvSubnet(internal_dim), aggr="max")
                 for _ in range(num_receptor_specific_layers)
             ]
         )
         self.shared_posts = torch.nn.ModuleList(
-            [SharedPostProcessing(feat_dim) for _ in self.shared_subblocks]
+            [SharedPostProcessing(internal_dim) for _ in self.shared_subblocks]
         )
         self.er_posts = torch.nn.ModuleList(
-            [SingleReceptorPostProcessing(feat_dim) for _ in self.er_sublocks]
+            [SingleReceptorPostProcessing(internal_dim) for _ in self.er_sublocks]
         )
         self.pr_posts = torch.nn.ModuleList(
-            [SingleReceptorPostProcessing(feat_dim) for _ in self.pr_sublocks]
+            [SingleReceptorPostProcessing(internal_dim) for _ in self.pr_sublocks]
         )
 
     def forward(self, x, edge_index, batch):
@@ -128,5 +129,5 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for depth in tqdm([1, 2, 3, 4, 5, 6]):
-        trainer.train_and_validate(partial(Model, depth - 1), f"econv_d{depth}")
+    for width in tqdm([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]):
+        trainer.train_and_validate(partial(Model, width), f"econv_w{int(log2(width))}")
