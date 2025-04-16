@@ -1,8 +1,7 @@
 # Based on https://github.com/engrodawood/HistBiases/blob/1aacf8ae86acfea5d29d55096a8af2b435ba99af/application/MLModels/SlideGraph%5E%7Binf%7D/model/gnn.py
 
 from abc import ABC, abstractmethod
-from functools import partial
-from math import log2
+from typing import Optional
 import sys
 from typing import Callable
 
@@ -10,7 +9,6 @@ sys.path.insert(0, "..")
 
 import torch
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -66,12 +64,13 @@ class SingleReceptorPostProcessing(PostProcessing):
 class Model(torch.nn.Module):
     def __init__(
         self,
-        internal_dim: int,
         feat_dim: int,
         num_middle_layers: int = 2,
         num_receptor_specific_layers: int = 0,
+        internal_dim: Optional[int] = None,
     ):
         super().__init__()
+        internal_dim = internal_dim if internal_dim else feat_dim
         self.shared_subblocks = torch.nn.ModuleList(
             [InitialSubnet(feat_dim, internal_dim)]
             + [
@@ -129,5 +128,4 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for width in tqdm([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]):
-        trainer.train_and_validate(partial(Model, width), f"econv_w{int(log2(width))}")
+    trainer.train_and_validate(Model, "econv")

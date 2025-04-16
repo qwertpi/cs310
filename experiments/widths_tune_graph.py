@@ -53,7 +53,8 @@ for i, metric in enumerate(("AUC_ROC(ER)", "AUC_ROC(PR)")):
                 (
                     (w, m, s)
                     for w, m, s in sorted(
-                        ((w, m[i], model_stds[w][i]) for w, m in model_means.items()), key=lambda t: t[0]
+                        ((w, m[i], model_stds[w][i]) for w, m in model_means.items()),
+                        key=lambda t: t[0],
                     )
                 )
             )
@@ -66,7 +67,9 @@ for i, metric in enumerate(("AUC_ROC(ER)", "AUC_ROC(PR)")):
             color=colors[metric],
             marker="x",
         )
-        ax.set_title({"gnn": "GNN", "gcn": "GCN", "gat": "GAT", "econv": "EdgeConv"}[model])
+        ax.set_title(
+            {"gnn": "GNN", "gcn": "GCN", "gat": "GAT", "econv": "EdgeConv"}[model]
+        )
         ax.set_xlabel("log2(hidden_dimension)")
         ax.set_xlim(left=-0.25, right=10.25)
         if metric == "AUC_ROC(ER)":

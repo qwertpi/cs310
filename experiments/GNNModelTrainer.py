@@ -44,7 +44,7 @@ class GNNModelTrainer:
         make_model: Callable[[int], torch.nn.Module],
         model_name: str,
         remove_label_correlations: bool = False,
-        discard_conflicting_labels: bool = False,
+        discard_conflicting_labels: bool = True,
         spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
         penalty_weight_er: Optional[float] = None,

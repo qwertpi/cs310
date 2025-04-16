@@ -10,9 +10,9 @@ from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
 
 class Model(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, feat_dim: int):
         super().__init__()
-        self.lin = torch_geometric.nn.Linear(1040, 2)
+        self.lin = torch_geometric.nn.Linear(feat_dim, 2)
 
     def forward(self, x, edge_index, batch):
         h = self.lin(x)

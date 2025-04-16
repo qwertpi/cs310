@@ -1,12 +1,10 @@
-from functools import partial
-from math import log2
+from typing import Optional
 import sys
 
 sys.path.insert(0, "..")
 
 import torch
 import torch_geometric.nn  # type: ignore
-from tqdm import tqdm
 
 from GNNModelTrainer import GNNModelTrainer  # type: ignore
 
@@ -25,12 +23,13 @@ class GNNBlock(torch.nn.Module):
 class Model(torch.nn.Module):
     def __init__(
         self,
-        internal_dim: int,
         feat_dim: int,
-        num_blocks: int = 3,
+        num_blocks: int = 2,
+        internal_dim: Optional[int] = None,
         act: torch.nn.Module = torch.nn.ELU(),
     ):
         super().__init__()
+        internal_dim = internal_dim if internal_dim else feat_dim
         self.blocks = torch.nn.ModuleList(
             [GNNBlock(act, feat_dim, internal_dim)]
             + [GNNBlock(act, internal_dim, internal_dim) for _ in range(num_blocks - 1)]
@@ -48,8 +47,4 @@ class Model(torch.nn.Module):
 
 if __name__ == "__main__":
     trainer = GNNModelTrainer()
-    for width in tqdm([1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]):
-        trainer.train_and_validate(
-            partial(Model, width),
-            f"gnn_w{int(log2(width))}",
-        )
+    trainer.train_and_validate(Model, "gnn")
