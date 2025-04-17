@@ -28,7 +28,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.ABCTB):
+    def __init__(self, datasource: DataSource = DataSource.TCGA):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
@@ -44,7 +44,8 @@ class GNNModelTrainer:
         make_model: Callable[[int], torch.nn.Module],
         model_name: str,
         remove_label_correlations: bool = False,
-        discard_conflicting_labels: bool = True,
+        discard_conflicting_labels: bool = False,
+        hinge_loss: bool = True,
         spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
         penalty_weight_er: Optional[float] = None,
@@ -62,6 +63,7 @@ class GNNModelTrainer:
                 weight_decay,
                 remove_label_correlations,
                 discard_conflicting_labels,
+                hinge_loss,
                 spectral_decoupling,
                 penalty_weight_er,
                 penalty_weight_pr,

@@ -22,6 +22,7 @@ class LightningModel(LightningModule):
         weight_decay: float,
         remove_label_correlations: bool,
         discard_conflicting_labels: bool,
+        hinge_loss: bool,
         spectral_decoupling: bool,
         penalty_weight_er: Optional[float],
         penalty_weight_pr: Optional[float],
@@ -31,6 +32,7 @@ class LightningModel(LightningModule):
         self.weight_decay = weight_decay if not spectral_decoupling else 0
         self.remove_label_correlations = remove_label_correlations
         self.discard_conflicting_labels = discard_conflicting_labels
+        self.hinge_loss = hinge_loss
         self.spectral_decoupling = spectral_decoupling
         self.penalty_weight_er = penalty_weight_er
         self.penalty_weight_pr = penalty_weight_pr
@@ -42,10 +44,19 @@ class LightningModel(LightningModule):
         def _compute_subset_loss(
             is_er: bool, pred: torch.Tensor, true: torch.Tensor, pos_prob: float
         ):
+            if self.hinge_loss:
+                # Labels must be converted for 0/1 to -1/1 for hinge loss
+                error_vector = torch.clamp(1 - (2 * true - 1) * pred, min=0)
+                error_vector[true == 1] = error_vector[true == 1] * torch.tensor(
+                    (1 - pos_prob) / pos_prob
+                )
+                error = error_vector.mean()
+            else:
+                error = torch.nn.functional.binary_cross_entropy_with_logits(
+                    pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
+                )
+
             penalty_weight = [self.penalty_weight_pr, self.penalty_weight_er][is_er]
-            error = torch.nn.functional.binary_cross_entropy_with_logits(
-                pred, true, pos_weight=torch.tensor((1 - pos_prob) / pos_prob)
-            )
             if self.spectral_decoupling:
                 penalty = (pred**2).mean()
             else:
@@ -55,6 +66,7 @@ class LightningModel(LightningModule):
                 raise ValueError(
                     "Penalty weights must be given if a penalty based invariance is used"
                 )
+
             return (error + penalty_weight * penalty).nan_to_num(0)
 
         _compute_subset_loss_er = partial(_compute_subset_loss, True)
