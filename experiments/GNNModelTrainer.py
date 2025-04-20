@@ -28,7 +28,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.TCGA):
+    def __init__(self, datasource: DataSource = DataSource.ABCTB):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
