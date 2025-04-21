@@ -28,7 +28,7 @@ class DataSource(Enum):
 
 
 class GNNModelTrainer:
-    def __init__(self, datasource: DataSource = DataSource.ABCTB):
+    def __init__(self, datasource: DataSource):
         self.dataset: Dataset
         if datasource is DataSource.TCGA:
             self.dataset = TCGADataset()
@@ -45,7 +45,7 @@ class GNNModelTrainer:
         model_name: str,
         remove_label_correlations: bool = False,
         discard_conflicting_labels: bool = False,
-        hinge_loss: bool = True,
+        hinge_loss: bool = False,
         spectral_decoupling: bool = False,
         weight_decay: float = 1e-2,  # AdamW's default value
         penalty_weight_er: Optional[float] = None,
@@ -55,6 +55,7 @@ class GNNModelTrainer:
         with open(f"{model_name}.metrics", "w") as f:
             f.write("")
         evaluator = ModelEvaluator(5, open(f"{model_name}.metrics", "a"))
+        model = None
         for fold_num, (train_idxs, validation_idxs) in enumerate(
             self.dataset.get_folds()
         ):
@@ -149,4 +150,36 @@ class GNNModelTrainer:
             evaluator.evalaute_fold(
                 t1 - t0, ckpt["epoch"], y_true, y_pred_er, y_pred_pr
             )
+        evaluator.close()
+
+        if model is None:
+            raise RuntimeError
+        folds_weights = [
+            torch.load(f"logs/{model_name}/version_{i}/checkpoints/best.ckpt")["state_dict"]
+            for i in range(5)
+        ]  # fmt: skip
+        weights = {
+            k: sum([d[k] for d in folds_weights]) / len(folds_weights)
+            for k in folds_weights[0].keys()
+        }
+        model.load_state_dict(weights)
+        model.eval()
+        y_pred_er = []
+        y_pred_pr = []
+        y_true = []
+        evaluator = ModelEvaluator(1, open(f"{model_name}_test.metrics", "a"))
+        with torch.no_grad():
+            for graph_data in torch_geometric.loader.DataLoader(
+                self.dataset.get_test_data(),
+                batch_size=self.batch_size,
+            ):
+                prediction = torch.nn.functional.sigmoid(
+                    model(graph_data.x, graph_data.edge_index, graph_data.batch)
+                )
+                y_pred_er.extend([float(t[0]) for t in prediction])
+                y_pred_pr.extend([float(t[1]) for t in prediction])
+                y_true.extend(
+                    [[round(t[0].item()), round(t[1].item())] for t in graph_data.y]
+                )
+        evaluator.evalaute_fold(-1, -1, y_true, y_pred_er, y_pred_pr)
         evaluator.close()

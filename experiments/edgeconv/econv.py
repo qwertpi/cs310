@@ -10,7 +10,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.nn  # type: ignore
 
-from GNNModelTrainer import GNNModelTrainer  # type: ignore
+from GNNModelTrainer import DataSource, GNNModelTrainer  # type: ignore
 
 
 class Subnet(torch.nn.Module, ABC):
@@ -127,5 +127,6 @@ class Model(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    trainer = GNNModelTrainer()
-    trainer.train_and_validate(Model, "econv")
+    trainer = GNNModelTrainer(DataSource.TCGA)
+    trainer.train_and_validate(Model, "tcga_econv")
+

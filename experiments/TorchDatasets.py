@@ -39,6 +39,11 @@ class Dataset(torch.utils.data.Dataset, ABC):
     def get_feat_dim() -> int:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def get_test_data() -> list[Data]:
+        pass
+
 
 class TCGADataset(Dataset):
     def __init__(self):
@@ -52,6 +57,11 @@ class TCGADataset(Dataset):
 
     def __getitem__(self, idx):
         return self.graphs[idx]
+
+    @staticmethod
+    def get_test_data():
+        with open("../../../data/test_data.pkl", "rb") as f:
+            return [t[1] for t in pickle.load(f)]
 
     @staticmethod
     def get_feat_dim():
@@ -84,6 +94,11 @@ class ABCTBDataset(Dataset):
                 self.cached_data = pickle.load(f)
         graph = self.cached_data[idx - acc]
         return graph
+
+    @staticmethod
+    def get_test_data():
+        with open("/dcs/large/u2220772/data_test.pkl", "rb") as f:
+            return pickle.load(f)
 
     @staticmethod
     def get_feat_dim():
