@@ -127,6 +127,6 @@ class Model(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    trainer = GNNModelTrainer(DataSource.TCGA)
-    trainer.train_and_validate(Model, "tcga_econv")
+    trainer = GNNModelTrainer(DataSource.ABCTB)
+    trainer.train_and_validate(Model, "abctb_econv")
 
