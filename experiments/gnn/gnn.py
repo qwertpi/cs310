@@ -1,3 +1,4 @@
+from functools import partial
 from typing import Optional
 import sys
 
@@ -6,8 +7,7 @@ sys.path.insert(0, "..")
 import torch
 import torch_geometric.nn  # type: ignore
 
-from GNNModelTrainer import GNNModelTrainer  # type: ignore
-
+from GNNModelTrainer import DataSource, GNNModelTrainer  # type: ignore
 
 class GNNBlock(torch.nn.Module):
     def __init__(self, act: torch.nn.Module, in_dim: int, out_dim: int):
@@ -46,5 +46,8 @@ class Model(torch.nn.Module):
 
 
 if __name__ == "__main__":
-    trainer = GNNModelTrainer()
-    trainer.train_and_validate(Model, "gnn")
+    trainer = GNNModelTrainer(DataSource.TCGA)
+    trainer.train_and_validate(partial(Model, num_blocks=3), "tcga_gnn")
+    trainer = GNNModelTrainer(DataSource.ABCTB)
+    trainer.train_and_validate(partial(Model, num_blocks=3), "abctb_gnn")
+
