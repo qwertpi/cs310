@@ -5,5 +5,5 @@
 #SBATCH --time=02:00:00
 
 module purge
-source venv/bin/activate
-python3 label_count.py
+source ~/cs310/venv/bin/activate
+python3 count.py

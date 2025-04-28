@@ -1,7 +1,7 @@
 import pickle
 from pathlib import Path
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.preprocessing import StandardScaler  # type: ignore
+from sklearn.model_selection import StratifiedGroupKFold  # type: ignore
 from tqdm import tqdm
 import torch
 
@@ -12,7 +12,9 @@ for filename in tqdm(list(Path(".").glob("*.pth"))):
     graph = torch.load(filename)
     patient_ids.append(graph.patient)
     labels.append((graph.y["ER Result"].item(), graph.y["PR Result"].item()))
-    graph.y = (graph.y["ER Result"].item(), graph.y["PR Result"].item())
+    graph.y = torch.tensor(
+        (graph.y["ER Result"].item(), graph.y["PR Result"].item()), dtype=torch.float
+    ).unsqueeze(0)
     del graph["feat_names"]
     del graph["coords"]
     del graph["id"]
