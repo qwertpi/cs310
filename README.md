@@ -3,7 +3,11 @@ A third year project in partial requirement for a Computer Science BSc at the
 University of Warwick, supervised by [Professor Fayyaz Minhas](https://sites.google.com/view/fayyaz).
 
 ## Abstract
-TO DO
+Both in the UK and globally, breast cancer is the most commonly diagnosed cancer in females. A key component in the diagnosis and management of breast cancer is the analysis of the tumour samples from the diagnostic biopsy.  
+The computational pathology literature shows high average results for predicting tumour properties from the microscope slides using deep learning models, giving hope that the need for specific laboratory tests could be eliminated. However, recent literature shows that these models make excessive use of correlated properties and so perform poorly in subgroups of patients who subvert these correlations.  
+In this project we gathered data on the relationship between the complexity of models and their overall performance. We also investigated the feasibility of making models ignore these undesired correlations.  
+We find that the gap between simple models and complex models is small, suggesting that the popular status of ER/PR prediction from H\&E as a benchmark is not deserved. We also find that various cutting-edge techniques for learning robust models are each incapable of improving performance in this task over the difficult subset.  
+We conclude that H\&E stains do not contain data from which ER/PR can be independently predicted, and so IHC testing cannot be directly disrupted by computational pathology.
 
 ## Copyright
 Copyright © 2024-25 Rory Sharp All rights reserved.
